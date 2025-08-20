@@ -6,12 +6,18 @@ Right now it ingests a few **toy documents**, embeds them, stores vectors in **F
 ---
 
 ## Project Layout
-app/ # Scripts to run ingestion and sanity checks
-rag/ # Core retrieval components (embeddings, chunking, extraction)
-store/ # Vector database (FAISS index files go here, gitignored)
-configs/ # YAML configs for sources, ingestion params
-data/ # Raw files, toy docs, staging outputs
-tests/ # Sanity queries and small test scripts# AI-Knowledge-Hub
+app/ 
+# Scripts to run ingestion and sanity checks
+rag/ 
+# Core retrieval components (embeddings, chunking, extraction)
+store/ 
+# Vector database (FAISS index files go here, gitignored)
+configs/ 
+# YAML configs for sources, ingestion params
+data/ 
+# Raw files, toy docs, staging outputs
+tests/ 
+# Sanity queries and small test scripts# AI-Knowledge-Hub
 A web-based GenAI portal for CRDC to summarize and track R&amp;D investments across structured and unstructured data.
 
 ## Environment Setup
@@ -25,15 +31,18 @@ source .venv311/bin/activate
 # install dependencies
 pip install -r requirements.txt
 
-# Demo Run
-With toy docs loaded, you can run:
-python app/sanity.py
-
 requirements.txt explained
 numpy → core numeric ops
 sentence-transformers / transformers / tokenizers / torch / accelerate → embedding stack (MiniLM, BERT, etc.)
 faiss-cpu → vector search index (fast similarity search)
 rich → nicer console output for debugging/logging
+
+# Demo Run
+With toy docs loaded, you can run:
+
+python app/sanity.py
+
+
 
 # Workflow (Pilot)
 1. Ingestion
