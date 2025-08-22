@@ -3,7 +3,18 @@ __pycache__/
 *.pyc
 *.env
 .data/
-data/
-logs/
+# Ignore data and logs, but keep folder structure via .gitkeep
+data/**
+!data/
+!data/raw/
+!data/staging/
+!data/.gitkeep
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+
+logs/**
+!logs/
+!logs/.gitkeep
+
 .DS_Store
 .gitattributes
