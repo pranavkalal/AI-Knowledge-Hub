@@ -1,0 +1,6 @@
+# List of document IDs to skip during ingestion/eval
+# Format: one ID per line, matching the "id" field in docs.jsonl
+
+ebd10aebbfad_GRDC%2011387%20Ex%20Summary%20Report
+1188d4a8ea3d_CSD2201%20Final%20Report
+30bea8211057_CA%2010895%20Final%20Report%20Executive%20Summary%20%282%29
