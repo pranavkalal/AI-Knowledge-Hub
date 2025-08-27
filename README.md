@@ -10,7 +10,9 @@ We use an ingestion pipeline to collect cotton research PDFs, extract text/metad
 
 ### Quickstart
 Run these 2. Refer MakeFile
+
 make ingest
+
 make eval.extract
 
 What happens
