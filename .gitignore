@@ -1,29 +1,51 @@
-.venv/
+# ---------- OS/editor junk ----------
+.DS_Store
+*.swp
+*.swo
+
+# ---------- Python junk ----------
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.build/
+.dist/
+
+# ---------- Environments & secrets ----------
+.venv*/
+venv/
+.env
 *.env
-.data/
-# Ignore data and logs, but keep folder structure via .gitkeep
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+
+# ---------- Project data (keep folder scaffolding via .gitkeep) ----------
 data/**
 !data/
 !data/raw/
-!data/raw_ocr/
-!data/raw_ignored/
-!data/staging/
-!data/.gitkeep
 !data/raw/.gitkeep
+!data/raw_ocr/
+!data/raw_ocr/.gitkeep
+!data/raw_ignored/
+!data/raw_ignored/.gitkeep
+!data/staging/
 !data/staging/.gitkeep
 
 logs/**
 !logs/
 !logs/.gitkeep
 
-.DS_Store
-.gitattributes__pycache__/
-*.pyc
-.DS_Store
-.venv*/
-logs/
-data/
-store/
-reports/
+store/**
+!store/
+!store/.gitkeep
+
+reports/**
+!reports/
+!reports/.gitkeep
+
+# ---------- Keep repo config files ----------
+.gitattributes
+
