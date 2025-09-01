@@ -24,6 +24,10 @@ retry:
   attempts: 3
   backoff_secs: 2
 
+paths:
+  raw_jsonl: data/staging/raw.jsonl
+  cleaned_jsonl: data/staging/cleaned.jsonl
+
 output:
   jsonl: "data/staging/docs.jsonl"
   csv:   "data/staging/docs.csv"

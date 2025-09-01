@@ -11,3 +11,6 @@ ingest:
 
 eval.extract:
 	python -m app.extraction_eval
+
+clean-extract:
+	python -m app.clean_extract --in configs/../data/staging/docs.jsonl --out data/staging/cleaned.jsonl
