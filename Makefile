@@ -14,3 +14,9 @@ eval.extract:
 
 clean-extract:
 	python -m app.clean_extract --in configs/../data/staging/docs.jsonl --out data/staging/cleaned.jsonl
+
+chunk:
+	python -m app.chunk --in data/staging/cleaned.jsonl --out data/staging/chunks.jsonl
+
+chunk-stats:
+	python scripts_sanity/chunk_stats.py --in data/staging/chunks.jsonl
