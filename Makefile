@@ -20,3 +20,12 @@ chunk:
 
 chunk-stats:
 	python scripts_sanity/chunk_stats.py --in data/staging/chunks.jsonl
+
+embed:
+	PU=.; PYTHONPATH=$$PU python -m scripts.build_embeddings --chunks data/staging/chunks.jsonl
+
+faiss:
+	PU=.; PYTHONPATH=$$PU python -m scripts.build_faiss --vecs data/embeddings/embeddings.npy
+
+query:
+	PU=.; PYTHONPATH=$$PU python -m scripts.query_faiss --q "water efficiency in irrigated cotton"

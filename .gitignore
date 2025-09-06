@@ -49,3 +49,5 @@ reports/**
 # ---------- Keep repo config files ----------
 .gitattributes
 
+data/embeddings/*.npy
+data/embeddings/*.faiss
