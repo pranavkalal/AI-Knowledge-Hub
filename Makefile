@@ -27,5 +27,11 @@ embed:
 faiss:
 	PU=.; PYTHONPATH=$$PU python -m scripts.build_faiss --vecs data/embeddings/embeddings.npy
 
+Q ?= water efficiency in irrigated cotton
+K ?= 5
+N ?= 2  # neighbors
+
 query:
-	PU=.; PYTHONPATH=$$PU python -m scripts.query_faiss --q "water efficiency in irrigated cotton"
+	PU=.; PYTHONPATH=$$PU python -m scripts.query_faiss --q "$(Q)" --k $(K) --per-doc 1 --neighbors $(N)
+
+
