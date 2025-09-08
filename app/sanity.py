@@ -6,8 +6,8 @@ from rich import print
 # Keep the tokenizer from forking extra workers on macOS
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-from rag.embed.sentence_xfmr import SentenceEmbedder
-from store.faiss_store import FaissStore
+from rag.embed.embedder import SentenceEmbedder
+from store.store_faiss import FaissStore
 
 DOCS = [
     {

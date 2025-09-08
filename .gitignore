@@ -33,6 +33,8 @@ data/**
 !data/raw_ignored/.gitkeep
 !data/staging/
 !data/staging/.gitkeep
+data/embeddings/*.npy
+data/embeddings/*.faiss
 
 logs/**
 !logs/
@@ -49,5 +51,3 @@ reports/**
 # ---------- Keep repo config files ----------
 .gitattributes
 
-data/embeddings/*.npy
-data/embeddings/*.faiss

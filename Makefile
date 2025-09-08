@@ -19,7 +19,7 @@ chunk:
 	python -m app.chunk --in data/staging/cleaned.jsonl --out data/staging/chunks.jsonl
 
 chunk-stats:
-	python scripts_sanity/chunk_stats.py --in data/staging/chunks.jsonl
+	python sanity_scripts/chunk_stats.py --in data/staging/chunks.jsonl
 
 embed:
 	PU=.; PYTHONPATH=$$PU python -m scripts.build_embeddings --chunks data/staging/chunks.jsonl
