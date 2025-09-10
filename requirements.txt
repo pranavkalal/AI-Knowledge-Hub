@@ -4,6 +4,10 @@ numpy==1.26.4
 pandas
 pyarrow
 
+##API 
+fastapi
+uvicorn
+pydantic
 
 # Embedding stack
 sentence-transformers==3.0.1
