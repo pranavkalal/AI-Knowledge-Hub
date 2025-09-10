@@ -1,6 +1,10 @@
 # Core numeric
 numpy==1.26.4
 
+pandas
+pyarrow
+
+
 # Embedding stack
 sentence-transformers==3.0.1
 transformers==4.43.3
@@ -13,3 +17,4 @@ faiss-cpu==1.8.0.post1
 
 # Console niceties
 rich==13.7.1
+

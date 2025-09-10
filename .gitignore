@@ -33,6 +33,8 @@ data/**
 !data/raw_ignored/.gitkeep
 !data/staging/
 !data/staging/.gitkeep
+data/embeddings/*.npy
+data/embeddings/*.faiss
 
 logs/**
 !logs/
