@@ -22,3 +22,4 @@ faiss-cpu==1.8.0.post1
 # Console niceties
 rich==13.7.1
 
+ruff>=0.6.0

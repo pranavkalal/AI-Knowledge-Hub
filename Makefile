@@ -28,7 +28,7 @@ chunk:
 	python -m app.chunk --in data/staging/cleaned.jsonl --out data/staging/chunks.jsonl
 
 chunk-stats:
-	python sanity_scripts/chunk_stats.py --in data/staging/chunks.jsonl
+	python tests/chunk_stats.py --in data/staging/chunks.jsonl
 
 embed:
 	PU=.; PYTHONPATH=$$PU python -m scripts.build_embeddings --chunks data/staging/chunks.jsonl
@@ -52,3 +52,13 @@ api:
 # Simple “prod-like” run (multi-worker, no reload)
 api-prod:
 	python -m uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 2
+
+# Ruff does lint checks and auto-fixes, then reformats code.
+fmt:
+	ruff check . --fix
+	ruff format .
+
+# ---------- Run tests ----------
+# Run pytest quietly (-q), using project root as PYTHONPATH so app/ imports work.
+test:
+	PYTHONPATH=. pytest -q

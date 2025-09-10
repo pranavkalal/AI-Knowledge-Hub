@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-import argparse, numpy as np, pandas as pd
+import argparse
+import numpy as np
 from pathlib import Path
 from rag.embed.embedder import Embedder
 
