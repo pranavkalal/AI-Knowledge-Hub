@@ -1,4 +1,6 @@
-import csv, json, os
+import csv
+import json
+import os
 from typing import Iterable, Dict
 
 def _ensure_parent_dir(path: str):

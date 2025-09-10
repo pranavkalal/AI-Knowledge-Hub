@@ -1,4 +1,6 @@
-import re, time, urllib.parse
+import re
+import time
+import urllib.parse
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Set
 import requests

@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional, Dict
 from pypdf import PdfReader  # use PyPDF2/pypdf
-import datetime, os
+import datetime
+import os
 
 @dataclass
 class ParsedPDF:

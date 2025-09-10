@@ -1,5 +1,6 @@
 # rag/extract/pipeline.py
-import json, os
+import json
+import os
 from typing import Dict, Iterable
 from .cleaners import clean_document_text
 

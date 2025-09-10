@@ -1,5 +1,7 @@
 # rag/ingest_lib/download.py
-import hashlib, os, time
+import hashlib
+import os
+import time
 from typing import Optional
 import requests
 

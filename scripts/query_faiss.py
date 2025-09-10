@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-import argparse, json, numpy as np
+import argparse
+import json
+import numpy as np
 from collections import defaultdict
 from rag.embed.embedder import Embedder
 from store.store_faiss import FaissFlatIP

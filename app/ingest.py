@@ -1,5 +1,6 @@
 # app/ingest.py
-import argparse, yaml
+import argparse
+import yaml
 from pathlib import Path
 
 from rag.ingest_lib.discover import collect_pdf_links

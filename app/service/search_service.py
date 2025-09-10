@@ -2,7 +2,10 @@
 # Purpose: Call the existing CLI (scripts/query_faiss.py), parse its JSONL output,
 # and normalize it into the stable /search response contract.
 
-import json, subprocess, sys, os
+import json
+import subprocess
+import sys
+import os
 from typing import Dict, Any, List
 from pathlib import Path
 
