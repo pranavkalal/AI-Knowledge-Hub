@@ -1,9 +1,10 @@
-# ---------- OS/editor junk ----------
+# ---------- OS / Editor junk ----------
 .DS_Store
 *.swp
 *.swo
+Thumbs.db
 
-# ---------- Python junk ----------
+# ---------- Python ----------
 __pycache__/
 *.py[cod]
 *.pyd
@@ -11,43 +12,57 @@ __pycache__/
 *.egg-info/
 .build/
 .dist/
+build/
+dist/
+.eggs/
+.ipynb_checkpoints/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # ---------- Environments & secrets ----------
 .venv*/
 venv/
 .env
 *.env
+.env.*
+.envrc
+.python-version
 
 # ---------- IDE ----------
 .vscode/
 .idea/
 
-# ---------- Project data (keep folder scaffolding via .gitkeep) ----------
+# ---------- Project data ----------
 data/**
+!data/**/.gitkeep
 !data/
-!data/raw/
-!data/raw/.gitkeep
-!data/raw_ocr/
-!data/raw_ocr/.gitkeep
-!data/raw_ignored/
-!data/raw_ignored/.gitkeep
-!data/staging/
-!data/staging/.gitkeep
+
+#ignore embeddings explicitly (redundant but explicit)
 data/embeddings/*.npy
 data/embeddings/*.faiss
 
+# ---------- Logs ----------
 logs/**
 !logs/
 !logs/.gitkeep
 
-store/**
-!store/
-!store/.gitkeep
-
+# ---------- Reports (keep folder only) ----------
 reports/**
 !reports/
 !reports/.gitkeep
 
-# ---------- Keep repo config files ----------
+# ---------- Store/code ----------
+
+store/*.bin
+store/*.idx
+
+# ---------- Misc ----------
+structure.txt
 .gitattributes
+
 
