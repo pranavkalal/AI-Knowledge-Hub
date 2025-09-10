@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-import argparse, numpy as np
+import argparse
+import numpy as np
 from store.store_faiss import FaissFlatIP
 
 def main():

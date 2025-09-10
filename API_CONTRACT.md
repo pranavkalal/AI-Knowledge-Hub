@@ -1,6 +1,15 @@
-# API Contract — `/search`
+# API Contract
 
-**GET** `/search?q=...&k=...`
+## `/api/health`
+
+**GET** `/api/health`  
+
+### 200 Response
+```json
+{
+  "status": "ok"
+}
+```
 
 ### Query Params
 - `q` (string, required) — search text  
@@ -30,21 +39,23 @@
       "title": "string",
       "year": 2019,
       "preview": "stitched ~900 chars",
-      "neighbor_window": [121,125],
+      "neighbor_window": [121, 125],
       "source_url": "https://…",
       "filename": "report.pdf"
     }
   ]
 }
+```
 
 Error Response
-
+``` json
 {
   "error": {
     "code": "BAD_REQUEST",
     "message": "k must be between 1 and 50"
   }
 }
+```
 
 Notes
 Only q is required.

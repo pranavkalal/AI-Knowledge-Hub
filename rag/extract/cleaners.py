@@ -1,5 +1,6 @@
 # rag/extract/cleaners.py
-import re, unicodedata
+import re
+import unicodedata
 
 # 1) Unicode + whitespace
 CTRL = "".join(map(chr, list(range(0,9)) + [11,12] + list(range(14,32)) + [127]))

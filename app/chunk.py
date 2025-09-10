@@ -1,5 +1,5 @@
 # app/chunk.py
-import argparse, json
+import argparse
 from rag.extract.pipeline import read_jsonl, write_jsonl
 from rag.segment.chunker import chunk_record
 

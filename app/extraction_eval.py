@@ -1,4 +1,7 @@
-import json, csv, statistics as st, pathlib
+import json
+import csv
+import statistics as st
+import pathlib
 
 IN = pathlib.Path("data/staging/docs.jsonl")
 OUT = pathlib.Path("reports/extraction_audit.csv")
