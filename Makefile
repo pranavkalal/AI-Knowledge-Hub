@@ -11,12 +11,16 @@ N ?= 2  # neighbors
 # -------------------------------
 # Data Pipeline
 # -------------------------------
+# Makefile (Windows-friendly)
+
+SHELL := cmd.exe
+.SHELLFLAGS := /C
 
 .PHONY: ingest eval.extract clean-extract chunk chunk-stats embed faiss query
+.PHONY: ingest eval.extract clean-extract chunk chunk-stats
 
 ingest:
-	mkdir -p logs
-	python -m app.ingest --config configs/ingestion.yaml 2>&1 | tee logs/ingest_$$(date +%F_%H-%M-%S).log
+	powershell -NoProfile -ExecutionPolicy Bypass -Command "if (!(Test-Path 'logs')) { New-Item -ItemType Directory -Path 'logs' | Out-Null }; $$log = 'logs/ingest_{0}.log' -f (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'); python -m app.ingest --config configs/ingestion.yaml 2>&1 | Tee-Object -FilePath $$log -Append"
 
 eval.extract:
 	python -m app.extraction_eval
