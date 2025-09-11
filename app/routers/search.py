@@ -1,4 +1,12 @@
-from fastapi import APIRouter, Query
+# app/routers/search.py
+#
+# Purpose:
+# Defines the /api/search endpoint for the Cotton RAG API.
+# - Accepts user queries and retrieval parameters (q, k, neighbors, per_doc).
+# - Delegates search logic to SearchService.
+# - Returns results in a typed schema consistent with API_CONTRACT.md.
+
+from fastapi import APIRouter, HTTPException, Query
 from app.schemas import SearchResponse
 from app.service.search_service import SearchService
 
