@@ -48,29 +48,53 @@ def passes_filters(rec, contains_any, year_min, year_max):
         return False
     return True
 
-# def stitch_preview(center_rec, lookup, neighbors=1, max_chars=900) -> str:
-#     cid = center_rec.get("id", "")
-#     parts = []
-#     for nid in neighbor_ids(cid, neighbors):
-#         rec = lookup.get(nid)
-#         if rec and rec.get("text"):
-#             parts.append(rec["text"])
-#     joined = " ".join(parts) if parts else (center_rec.get("text") or "")
-#     return joined[:max_chars].replace("\n", " ")
-def stitch_preview(center_rec, lookup, neighbors=1, max_chars=900) -> str:
+def stitch_preview(center_rec, lookup, neighbors=1, max_chars=1800, no_truncate=False) -> str:
+    """Stitch ±neighbors chunks from the same doc. Honor max_chars unless no_truncate."""
     cid = center_rec.get("id", "")
     center_doc = center_rec.get("doc_id") or cid.split("_chunk")[0]
     parts = []
-    for nid in neighbor_ids(cid, neighbors):
-        rec = lookup.get(nid)
-        # only stitch if it's the same document
-        if rec and (rec.get("doc_id") or nid.split("_chunk")[0]) == center_doc:
-            txt = rec.get("text") or ""
-            if txt:
-                parts.append(txt)
-    joined = " ".join(parts) if parts else (center_rec.get("text") or "")
-    return joined[:max_chars].replace("\n", " ")
+    total_len = 0
 
+    # Always include center chunk first, then expand outwards
+    center_list = neighbor_ids(cid, neighbors)
+    for nid in center_list:
+        rec = lookup.get(nid)
+        if rec and (rec.get("doc_id") or nid.split("_chunk")[0]) == center_doc:
+            txt = (rec.get("text") or "").replace("\n", " ")
+            if not txt:
+                continue
+            if no_truncate:
+                parts.append(txt)
+            else:
+                # soft cap while adding neighbors
+                room = max_chars - total_len
+                if room <= 0:
+                    break
+                if len(txt) <= room:
+                    parts.append(txt)
+                    total_len += len(txt)
+                else:
+                    parts.append(txt[:room])
+                    total_len += room
+                    break
+
+    joined = " ".join(parts) if parts else (center_rec.get("text") or "")
+    if no_truncate:
+        return joined
+    # Final hard cap just in case join added spaces
+    return joined[:max_chars]
+
+def maybe_counts(s: str):
+    words = len(s.split())
+    chars = len(s)
+    tok = None
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        tok = len(enc.encode(s))
+    except Exception:
+        tok = None
+    return words, chars, tok
 
 def main():
     ap = argparse.ArgumentParser(description="Query FAISS index")
@@ -85,6 +109,10 @@ def main():
     ap.add_argument("--year-min", type=int)
     ap.add_argument("--year-max", type=int)
     ap.add_argument("--json", action="store_true", help="output JSON lines instead of pretty text")
+    # New knobs
+    ap.add_argument("--max-preview-chars", type=int, default=1800, help="char cap for printed preview")
+    ap.add_argument("--no-truncate", action="store_true", help="print full stitched preview (ignore char cap)")
+    ap.add_argument("--show-counts", action="store_true", help="print word/char/token counts for previews")
     args = ap.parse_args()
 
     # 1) search with some overfetch to allow filtering/diversification
@@ -130,14 +158,27 @@ def main():
     # 6) output
     if args.json:
         for score, cid, rec in results:
+            preview = stitch_preview(
+                rec, lookup,
+                neighbors=args.neighbors,
+                max_chars=args.max_preview_chars,  
+                no_truncate=args.no_truncate
+            )
+
             out = {
                 "score": round(score, 3),
                 "id": cid,
                 "doc_id": rec.get("doc_id"),
                 "title": rec.get("title"),
                 "year": rec.get("year"),
-                "preview": stitch_preview(rec, lookup, neighbors=args.neighbors, max_chars=900),
+                "preview": preview,
             }
+            if args.show_counts:
+                w, c, t = maybe_counts(preview)
+                out["preview_words"] = w
+                out["preview_chars"] = c
+                if t is not None:
+                    out["preview_tokens"] = t
             print(json.dumps(out, ensure_ascii=False))
         return
 
@@ -145,7 +186,16 @@ def main():
         print(f"#{rank} score={score:.3f} id={cid}")
         print(f"   title: {rec.get('title') or rec.get('doc_id') or '?'}")
         print(f"   year:  {rec.get('year', '?')}")
-        prev = stitch_preview(rec, lookup, neighbors=args.neighbors, max_chars=900)
+        prev = stitch_preview(
+            rec, lookup,
+            neighbors=args.neighbors,
+            max_chars=args.max_preview_chars,
+            no_truncate=args.no_truncate
+        )
+        if args.show_counts:
+            w, c, t = maybe_counts(prev)
+            tok_str = f", tokens~{t}" if t is not None else ""
+            print(f"   counts: {w} words, {c} chars{tok_str}")
         print(f"   text:  {prev}\n")
 
 if __name__ == "__main__":
