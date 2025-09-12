@@ -1,3 +1,8 @@
+
+# Purpose:
+# Defines the /api/health endpoint for the Cotton RAG API.
+# - Provides a simple liveness/readiness check.
+# - Useful for monitoring and CI/CD deployment probes.
 # app/routers/health.py
 from fastapi import APIRouter
 
