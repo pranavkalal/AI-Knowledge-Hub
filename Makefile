@@ -4,7 +4,7 @@
 # -------------------------------
 
 # -------- Defaults (tweak as needed)
-Q ?= water efficiency in irrigated cotton
+Q ?= 
 K ?= 5
 N ?= 2            # neighbors
 PER_DOC ?= 2
