@@ -1,27 +1,30 @@
-# Core numeric
+# --- Core numeric / IO
 numpy==1.26.4
+pandas==2.2.2
+pyarrow==16.1.0
 
-pandas
-pyarrow
+# --- API
+fastapi==0.114.2
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
 
-##API 
-fastapi
-uvicorn
-pydantic
-
-# Embedding stack
+# --- Embeddings / NLP
 sentence-transformers==3.0.1
 transformers==4.43.3
 tokenizers==0.19.1
-torch==2.3.1
 accelerate==0.33.0
+tiktoken==0.7.0
 
-# Vector search
+# PyTorch:
+# Leave it here for platforms where pip works out of the box (macOS x86/arm64, most Windows).
+# If someone has trouble, they should install torch via the official command for their CUDA/CPU, then re-run pip for the rest.
+torch==2.3.1
+
+# --- Vector search
 faiss-cpu==1.8.0.post1
 
-# Console niceties
+# --- Dev / DX
 rich==13.7.1
-
-ruff>=0.6.0
-
-tiktoken
+ruff==0.6.8
+pytest==8.3.3
+python-dotenv==1.0.1
