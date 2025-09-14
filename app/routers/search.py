@@ -7,10 +7,9 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from app.schemas import SearchResponse
-from app.service.search_service import SearchService
+from app.service.search_service import search_service  # <- function, not class
 
 router = APIRouter(tags=["search"])
-svc = SearchService()
 
 @router.get("/search", response_model=SearchResponse)
 def search(
@@ -31,7 +30,8 @@ def search(
             else:
                 year_min = year_max = int(year)
 
-        return svc.search(
+        # Pass through what the CLI actually supports
+        return search_service(
             q=q,
             k=k,
             neighbors=neighbors,
@@ -39,7 +39,6 @@ def search(
             contains=contains,
             year_min=year_min,
             year_max=year_max,
-            cursor=cursor,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
