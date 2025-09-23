@@ -81,15 +81,7 @@ query:
 	  --neighbors $(N) \
 	  $(ARGS)
 
-# -------------------------------
-# API
-# -------------------------------
 
-api:
-	PYTHONPATH=. $(PY) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-api-prod:
-	PYTHONPATH=. $(PY) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
 
 
 # -------------------------------
@@ -107,3 +99,32 @@ help:
 	@echo 'Examples:'
 	@echo '  make query Q="Grazon Extra impact on cotton yield" K=8 N=2 PER_DOC=2 ARGS="--year-min 2010 --contains \"grazon extra,herbicide\" "'
 	@echo '  make query Q="pyriproxyfen spray window"'
+
+# -------------------------------
+# API
+# -------------------------------
+
+.PHONY: api api-prod ui dev stop-api
+PY ?= python3
+UVICORN ?= uvicorn
+STREAMLIT ?= streamlit
+HOST ?= 0.0.0.0
+PORT ?= 8000
+UI_PORT ?= 8501
+COTTON_API_BASE ?= http://localhost:$(PORT)/api
+
+api:
+	PYTHONPATH=. $(PY) -m $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
+
+ui:
+	COTTON_API_BASE=$(COTTON_API_BASE) $(STREAMLIT) run ui/streamlit_app.py --server.port $(UI_PORT)
+
+# one-shot developer runner: starts API in bg, runs UI, cleans up API on exit
+dev:
+	PYTHONPATH=. $(PY) -m $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
+	echo $$! > .api.pid; \
+	COTTON_API_BASE=$(COTTON_API_BASE) $(STREAMLIT) run ui/streamlit_app.py --server.port $(UI_PORT); \
+	kill $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid
+
+stop-api:
+	-kill $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid
