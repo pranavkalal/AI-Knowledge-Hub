@@ -30,3 +30,5 @@ rich==13.7.1
 ruff==0.6.8
 pytest==8.3.3
 python-dotenv==1.0.1
+invoke==2.1.1
+black==24.10.0
