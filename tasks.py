@@ -19,46 +19,85 @@ API_HOST  = os.environ.get("HOST", "0.0.0.0")
 API_PORT  = int(os.environ.get("PORT", "8000"))
 UI_PORT   = int(os.environ.get("UI_PORT", "8501"))
 API_BASE  = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
+EMB_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
 
 # Paths
 RAW_DIR   = Path("data/raw")
+# add near the other path constants
+INGEST_CFG = Path("configs/ingestion.yaml")
 DOCS      = Path("data/staging/docs.jsonl")
 CHUNKS    = Path("data/staging/chunks.jsonl")
+EMB_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
+
 EMB_DIR   = Path("data/embeddings")
 EMB_EDS   = EMB_DIR / "embeddings.npy"
 EMB_IDS   = EMB_DIR / "ids.npy"
 FAISS     = EMB_DIR / "vectors.faiss"
 
-def _run(cmd, **kwargs):
+# replace your _run with this
+def _run(cmd, env: dict | None = None, **kwargs):
+    """Run a shell cmd with repo root on PYTHONPATH, plus optional env overrides."""
+    base = os.environ.copy()
+    root = str(Path(".").resolve())
+    base["PYTHONPATH"] = f'{root}{os.pathsep}{base.get("PYTHONPATH","")}'
+    if env:
+        base.update(env)  # merge overrides
     print(f"$ {cmd}")
-    return subprocess.run(cmd, shell=True, check=True, **kwargs)
+    return subprocess.run(cmd, shell=True, check=True, env=base, **kwargs)
+
 
 def _ensure_dir(p: Path):
     p.parent.mkdir(parents=True, exist_ok=True)
 
 @task
-def ingest(c):
-    """Parse PDFs -> docs.jsonl"""
-    _ensure_dir(DOCS)
-    _run(f'{PY} app/ingest.py --in {RAW_DIR} --out {DOCS}')
+def ingest(c, config=None):
+    """
+    Crawl + extract → write docs.jsonl using the YAML config.
+    Default config: configs/ingestion.yaml
+    Override: invoke ingest --config path/to/other.yaml
+    """
+    cfg = Path(config) if config else INGEST_CFG
+
+    if not cfg.exists():
+        raise SystemExit(f"Missing ingest config: {cfg}. Put your YAML at configs/ingestion.yaml or pass --config.")
+
+    # Ensure the expected output dirs exist (based on your YAML)
+    _ensure_dir(Path("data/staging/docs.jsonl"))
+    _ensure_dir(Path("data/staging/raw.jsonl"))
+    _ensure_dir(Path("data/staging/cleaned.jsonl"))
+    _ensure_dir(Path("data/raw"))
+
+    _run(f"{PY} -m app.ingest --config {cfg}")
+
 
 @task
 def chunk(c, max_tokens=512, overlap=64):
     """Chunk docs -> chunks.jsonl"""
     _ensure_dir(CHUNKS)
-    _run(f'{PY} app/chunk.py --in {DOCS} --out {CHUNKS} --max_tokens {max_tokens} --overlap {overlap}')
+    _run(f'{PY} -m app.chunk --in {DOCS} --out {CHUNKS} --max_tokens {max_tokens} --overlap {overlap}')
 
 @task
 def embed(c):
     """Build embeddings.npy + ids.npy"""
     _ensure_dir(EMB_EDS)
-    _run(f'{PY} scripts/build_embeddings.py --in {CHUNKS} --out_dir {EMB_DIR}')
+    _run(
+        f'{PY} -m scripts.build_embeddings '
+        f'--chunks {CHUNKS} '
+        f'--out_vecs {EMB_EDS} '
+        f'--out_ids {EMB_IDS} '
+        f'--model "{EMB_MODEL}"'
+    )
 
 @task
 def faiss(c):
-    """Build FAISS index"""
+    """Build FAISS index (embeddings -> vectors.faiss)."""
     _ensure_dir(FAISS)
-    _run(f'{PY} scripts/build_faiss.py --embeddings {EMB_EDS} --ids {EMB_IDS} --out {FAISS}')
+    _run(
+        f'{PY} -m scripts.build_faiss '
+        f'--vecs {EMB_EDS} '
+        f'--index_out {FAISS}'
+    )
+
 
 @task
 def build(c):
@@ -73,9 +112,7 @@ def build(c):
 @task
 def query(c, q, k=8, neighbors=2, per_doc=2):
     """CLI test against FAISS"""
-    _run(
-        f'{PY} scripts/query_faiss.py --q "{q}" --k {k} --neighbors {neighbors} --per-doc {per_doc}'
-    )
+    _run(f'{PY} -m scripts.query_faiss --q "{q}" --k {k} --neighbors {neighbors} --per-doc {per_doc}')
 
 @task
 def api(c, reload=True):
@@ -96,7 +133,6 @@ def ui(c):
 @task
 def dev(c):
     """Ensure index exists, then run API + UI together; stop API when UI exits."""
-    # Build if missing
     if not FAISS.exists():
         print("FAISS index missing → running full build...")
         build(c)
@@ -111,22 +147,23 @@ def dev(c):
     print(f"[api] pid={api_proc.pid} on http://localhost:{API_PORT}/api")
 
     try:
-        # Start UI (blocking)
-        env_ui = os.environ.copy()
-        env_ui["COTTON_API_BASE"] = API_BASE
-        _run(f'streamlit run ui/streamlit_app.py --server.port {UI_PORT}', env=env_ui)
+        # Start UI (blocking) with API base injected
+        _run(
+            f'streamlit run ui/streamlit_app.py --server.port {UI_PORT}',
+            env={"COTTON_API_BASE": API_BASE},
+        )
     finally:
-        # Kill API when UI closes
         api_proc.terminate()
         try:
             api_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             api_proc.kill()
 
+
 @task(name="eval-extract")
 def eval_extract(c):
     """Run extraction audit"""
-    _run(f'{PY} app/extraction_eval.py')
+    _run(f'{PY} -m app.extraction_eval')
 
 @task
 def clean(c):

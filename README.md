@@ -4,18 +4,19 @@ A web-based GenAI portal for CRDC to summarize and track R&D investments across 
 
 ---
 
+## Quickstart for Developer
+
 ## 📥 Data Ingestion
 
 We use an ingestion pipeline to collect cotton research PDFs, extract text/metadata, and run quality checks.
 
-### Quickstart
 ```bash
 make ingest
 
 make eval.extract
 ```
 
-##  Chunking & Sanity Checks
+## Chunking & Sanity Checks
 
 Split cleaned text into manageable chunks and run basic stats.
 
@@ -32,8 +33,7 @@ avg/min/max tokens per chunk (with P50 and P90)
 avg/min/max chars per chunk
 sample chunk preview
 
-
-##  Embeddings & FAISS (Prototype)
+## Embeddings & FAISS (Prototype)
 
 Generate dense embeddings using `BAAI/bge-small-en-v1.5` and index them with FAISS for retrieval.
 
@@ -42,25 +42,27 @@ make embed      # builds embeddings.npy and ids.npy from chunks.jsonl
 make faiss      # builds vectors.faiss index from embeddings.npy
 make query      # run a test query against the FAISS index
 ```
+
 The query step prints the top-k retrieved chunks with:
 similarity score
 chunk/document id
 title and year (if available)
 short text preview
 
-##  API
+## API
 
 We expose a FastAPI service that wraps retrieval behind a `/search` endpoint.
 
 ### Run the API
+
 ```bash
 make api      # dev mode with auto-reload
 make api-prod # prod-like mode with multiple workers
  ```
 
- By default it starts on http://localhost:8000.
-Docs UI: http://localhost:8000/docs
-OpenAPI schema: http://localhost:8000/openapi.json
+ By default it starts on <http://localhost:8000>.
+Docs UI: <http://localhost:8000/docs>
+OpenAPI schema: <http://localhost:8000/openapi.json>
 
 ## Contract
 
