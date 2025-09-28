@@ -107,3 +107,31 @@ help:
 	@echo 'Examples:'
 	@echo '  make query Q="Grazon Extra impact on cotton yield" K=8 N=2 PER_DOC=2 ARGS="--year-min 2010 --contains \"grazon extra,herbicide\" "'
 	@echo '  make query Q="pyriproxyfen spray window"'
+
+
+# --- config ---
+PYTHON ?= python3
+PIP    ?= $(PYTHON) -m pip
+
+.PHONY: venv install dev-install ocr-check install-tesseract-ubuntu install-tesseract-macos
+
+venv:
+	$(PYTHON) -m venv .venv
+
+install:  ## Install Python dependencies (prod)
+	. .venv/bin/activate && $(PIP) install -U pip && $(PIP) install -r requirements.txt
+
+dev-install:  ## Install dev + prod deps
+	. .venv/bin/activate && $(PIP) install -U pip && $(PIP) install -r requirements.txt -r requirements-dev.txt
+
+ocr-check:  ## Verify Tesseract is installed and reachable
+	@command -v tesseract >/dev/null 2>&1 && echo " Tesseract found: $$(tesseract --version | head -n1)" || \
+	 (echo " Tesseract not found. Run one of the install targets below."; exit 1)
+
+# ---- System package helpers (run one of these locally as appropriate) ----
+install-tesseract-ubuntu:
+	sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
+install-tesseract-macos:
+	@command -v brew >/dev/null 2>&1 || (echo "Homebrew required: https://brew.sh"; exit 1)
+	brew install tesseract

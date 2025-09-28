@@ -28,3 +28,9 @@ rich==13.7.1
 ruff==0.6.8
 pytest==8.3.3
 python-dotenv==1.0.1
+
+
+pymupdf>=1.24.9
+pdfplumber>=0.11.3
+pytesseract>=0.3.13
+Pillow>=10.4.0
