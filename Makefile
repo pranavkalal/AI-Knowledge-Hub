@@ -104,7 +104,8 @@ help:
 # API
 # -------------------------------
 
-.PHONY: api api-prod ui dev stop-api
+.PHONY: api api-prod ui dev stop-api ask.demo ask QJSON
+
 PY ?= python3
 UVICORN ?= uvicorn
 STREAMLIT ?= streamlit
@@ -128,3 +129,18 @@ dev:
 
 stop-api:
 	-kill $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid
+
+# fixed ask demo (quotes escaped for Makefiles)
+ask.demo:
+	@curl -s http://localhost:$(PORT)/api/ask \
+		-H "Content-Type: application/json" \
+		-d "{\"question\":\"Summarise post-2018 water productivity trends with citations.\", \"k\":5}" | jq
+
+# parametric ask target: pass Q='your question' and optional K=#
+Q ?=
+K ?= 6
+ask:
+	@if [ -z "$(Q)" ]; then echo 'Usage: make ask Q="your question" K=6'; exit 1; fi
+	@curl -s http://localhost:$(PORT)/api/ask \
+		-H "Content-Type: application/json" \
+		-d "$$(jq -nc --arg q "$(Q)" --argjson k $(K) '{question:$$q, k:$$k}')" | jq

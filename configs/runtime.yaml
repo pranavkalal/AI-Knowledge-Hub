@@ -1,0 +1,19 @@
+embedder:
+  adapter: bge_local
+  model: BAAI/bge-small-en-v1.5
+
+vector_store:
+  adapter: faiss_local
+  path: data/embeddings/vectors.faiss
+  ids: data/embeddings/ids.npy
+  meta: data/staging/chunks.jsonl
+  embed_cache: data/embeddings/embeddings.npy  # optional
+
+reranker:
+  adapter: bge_reranker
+
+llm:
+  adapter: openai
+  model: gpt-4o-mini
+  temperature: 0.2
+  max_output_tokens: 600

@@ -1,13 +1,31 @@
 #!/usr/bin/env python
+"""
+Feature-rich FAISS query CLI that matches the API stack.
+- Uses the same embedding adapter as /api/ask (BGEEmbeddingAdapter) so results are consistent.
+- Preserves your existing goodies: overfetch + per-doc diversification, neighbor stitching,
+  keyword/year filters, preview word/char/token counts, JSON/pretty output.
+
+Inputs:
+  - FAISS index: data/embeddings/vectors.faiss
+  - IDs array:   data/embeddings/ids.npy
+  - Chunk meta:  data/staging/chunks.jsonl  (records with keys: id, doc_id, title, year, text, page?, url?)
+
+Usage:
+  python scripts/query_faiss.py --q "irrigation efficiency 2018" --k 8 --neighbors 1 --per-doc 2 --show-counts
+"""
+
 import argparse
 import json
 import numpy as np
 from collections import defaultdict
-from rag.embed.embedder import Embedder
+
+# Unified embedding path: same as API
+from app.adapters.embed_bge import BGEEmbeddingAdapter
 from store.store_faiss import FaissFlatIP
 
+
 def neighbor_ids(cid: str, neighbors: int) -> list[str]:
-    # expects ids like "..._chunk0123"
+    """Return list of neighbor chunk ids ±N around cid (expects suffix `_chunkNNNN`)."""
     if neighbors <= 0:
         return [cid]
     base, _, tail = cid.partition("_chunk")
@@ -20,7 +38,9 @@ def neighbor_ids(cid: str, neighbors: int) -> list[str]:
         ids.append(f"{base}_chunk{j:04d}")
     return ids
 
+
 def load_lookup(chunks_path: str, needed_ids: set[str]) -> dict[str, dict]:
+    """Read only the chunk records we actually need into a dict keyed by id."""
     lookup = {}
     if not needed_ids:
         return lookup
@@ -36,7 +56,9 @@ def load_lookup(chunks_path: str, needed_ids: set[str]) -> dict[str, dict]:
                     break
     return lookup
 
+
 def passes_filters(rec, contains_any, year_min, year_max):
+    """Apply keyword and year range filters to a chunk record."""
     if contains_any:
         text = (rec.get("text") or "").lower()
         if not any(kw in text for kw in contains_any):
@@ -48,16 +70,18 @@ def passes_filters(rec, contains_any, year_min, year_max):
         return False
     return True
 
+
 def stitch_preview(center_rec, lookup, neighbors=1, max_chars=1800, no_truncate=False) -> str:
-    """Stitch ±neighbors chunks from the same doc. Honor max_chars unless no_truncate."""
+    """
+    Stitch ±neighbors chunks from the same doc to form a readable preview.
+    Honors max_chars unless no_truncate=True.
+    """
     cid = center_rec.get("id", "")
     center_doc = center_rec.get("doc_id") or cid.split("_chunk")[0]
     parts = []
     total_len = 0
 
-    # Always include center chunk first, then expand outwards
-    center_list = neighbor_ids(cid, neighbors)
-    for nid in center_list:
+    for nid in neighbor_ids(cid, neighbors):
         rec = lookup.get(nid)
         if rec and (rec.get("doc_id") or nid.split("_chunk")[0]) == center_doc:
             txt = (rec.get("text") or "").replace("\n", " ")
@@ -65,29 +89,26 @@ def stitch_preview(center_rec, lookup, neighbors=1, max_chars=1800, no_truncate=
                 continue
             if no_truncate:
                 parts.append(txt)
+                continue
+            room = max_chars - total_len
+            if room <= 0:
+                break
+            if len(txt) <= room:
+                parts.append(txt)
+                total_len += len(txt)
             else:
-                # soft cap while adding neighbors
-                room = max_chars - total_len
-                if room <= 0:
-                    break
-                if len(txt) <= room:
-                    parts.append(txt)
-                    total_len += len(txt)
-                else:
-                    parts.append(txt[:room])
-                    total_len += room
-                    break
+                parts.append(txt[:room])
+                total_len += room
+                break
 
     joined = " ".join(parts) if parts else (center_rec.get("text") or "")
-    if no_truncate:
-        return joined
-    # Final hard cap just in case join added spaces
-    return joined[:max_chars]
+    return joined if no_truncate else joined[:max_chars]
+
 
 def maybe_counts(s: str):
+    """Return (words, chars, tokens?) using cl100k_base if available."""
     words = len(s.split())
     chars = len(s)
-    tok = None
     try:
         import tiktoken
         enc = tiktoken.get_encoding("cl100k_base")
@@ -95,6 +116,7 @@ def maybe_counts(s: str):
     except Exception:
         tok = None
     return words, chars, tok
+
 
 def main():
     ap = argparse.ArgumentParser(description="Query FAISS index")
@@ -109,32 +131,41 @@ def main():
     ap.add_argument("--year-min", type=int)
     ap.add_argument("--year-max", type=int)
     ap.add_argument("--json", action="store_true", help="output JSON lines instead of pretty text")
-    # New knobs
     ap.add_argument("--max-preview-chars", type=int, default=1800, help="char cap for printed preview")
     ap.add_argument("--no-truncate", action="store_true", help="print full stitched preview (ignore char cap)")
     ap.add_argument("--show-counts", action="store_true", help="print word/char/token counts for previews")
+    ap.add_argument("--model", default="BAAI/bge-small-en-v1.5", help="embedding model (kept for parity with API)")
     args = ap.parse_args()
 
-    # 1) search with some overfetch to allow filtering/diversification
+    # 1) Load FAISS index and ids
     idx = FaissFlatIP.load(args.index)
+    # Some versions might return a tuple; be tolerant.
+    if isinstance(idx, tuple):
+        idx = idx[0]
     ids = np.load(args.ids, allow_pickle=True)
-    qvec = Embedder().encode([args.q])
+
+    # 2) Embed query using the same adapter as API
+    emb = BGEEmbeddingAdapter(args.model)
+    qvec1d = np.array(emb.embed_query(args.q), dtype="float32")
+    qvec = qvec1d[None, :]  # shape [1, D]
+
+    # 3) Overfetch to allow filtering and per-doc diversification
     overfetch = max(args.k * 5, 50)
     D, I = idx.search(qvec, k=overfetch)
 
-    # 2) build set of needed ids including neighbors for stitching
-    cand_ids = [ids[i] for i in I[0]]
+    # 4) Build neighbor set for stitching and load just those records
+    cand_ids = [ids[i] for i in I[0] if i >= 0]
     neighbor_set = set()
     for cid in cand_ids:
         neighbor_set.update(neighbor_ids(cid, args.neighbors))
-
-    # 3) load only those records
     lookup = load_lookup(args.chunks, neighbor_set)
 
-    # 4) collect candidates with filters
+    # 5) Apply filters
     contains_any = [s.strip().lower() for s in args.contains.split(",") if s.strip()] if args.contains else []
     candidates = []
     for score, i in zip(D[0], I[0]):
+        if i < 0:
+            continue
         cid = ids[i]
         rec = lookup.get(cid)
         if not rec:
@@ -143,7 +174,7 @@ def main():
             continue
         candidates.append((float(score), cid, rec))
 
-    # 5) diversify per doc
+    # 6) Per-doc diversification
     per_doc_count = defaultdict(int)
     results = []
     for score, cid, rec in candidates:
@@ -155,16 +186,15 @@ def main():
         if len(results) >= args.k:
             break
 
-    # 6) output
+    # 7) Output
     if args.json:
         for score, cid, rec in results:
             preview = stitch_preview(
                 rec, lookup,
                 neighbors=args.neighbors,
-                max_chars=args.max_preview_chars,  
+                max_chars=args.max_preview_chars,
                 no_truncate=args.no_truncate
             )
-
             out = {
                 "score": round(score, 3),
                 "id": cid,
@@ -197,6 +227,7 @@ def main():
             tok_str = f", tokens~{t}" if t is not None else ""
             print(f"   counts: {w} words, {c} chars{tok_str}")
         print(f"   text:  {prev}\n")
+
 
 if __name__ == "__main__":
     main()
