@@ -20,10 +20,13 @@ make eval.extract
 Split cleaned text into manageable chunks and run basic stats.
 
 ```bash
+python -m app.clean_extract --in configs/../data/staging/docs.jsonl --out data/staging/cleaned.jsonl
+
 python app/chunk.py --in data/staging/docs.jsonl --out data/staging/chunks.jsonl --max_tokens 512 --overlap 64
+#python -m app.chunk --in data/staging/cleaned.jsonl --out data/staging/chunks.jsonl --max_tokens 512 --overlap 64
 
 python scripts_sanity/chunk_stats.py --in data/staging/chunks.jsonl
-
+#python tests\chunk_stats.py --in data\staging\chunks.jsonl
 ```
 
 This prints:

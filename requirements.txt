@@ -3,6 +3,12 @@ numpy==1.26.4
 pandas==2.2.2
 pyarrow==16.1.0
 
+# --- PDF / OCR
+pymupdf==1.24.9        # import name: fitz
+pdfplumber==0.11.2
+pytesseract==0.3.13
+Pillow==10.4.0
+
 # --- API
 fastapi==0.114.2
 uvicorn[standard]==0.30.6
