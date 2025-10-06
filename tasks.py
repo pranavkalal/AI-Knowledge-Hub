@@ -13,6 +13,8 @@
 from invoke import task
 import os, sys, subprocess
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 PY        = sys.executable
 API_HOST  = os.environ.get("HOST", "0.0.0.0")
