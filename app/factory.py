@@ -1,16 +1,28 @@
 """
 app/factory.py
 
-Factory to build the QAPipeline from a YAML runtime config.
+Factory to build a Q&A pipeline from YAML runtime config.
 - Swaps providers by config (no code edits).
 - Supports: OpenAI or Ollama for LLM; Noop or BGE cross-encoder for reranking.
-- Validates key files so you don’t learn at runtime that paths are wrong.
+- Optional orchestrator toggle: native pipeline vs LangChain chain.
+- Validates key files so failures happen at startup, not in a meeting.
 """
 
 from __future__ import annotations
+
 import os
+from pathlib import Path
+from typing import Any, Dict
+
 import yaml
 
+try:
+    from dotenv import load_dotenv  # optional, but nice for local dev
+    load_dotenv()
+except Exception:
+    pass
+
+# Native pipeline
 from app.services.qa import QAPipeline
 
 # Adapters (embedding + vector)
@@ -23,21 +35,36 @@ from app.adapters.rerank_bge import BGERerankerAdapter  # requires sentence-tran
 
 # LLMs
 from app.adapters.llm_openai import OpenAIAdapter
+
 try:
-    # optional, only if you added the file I gave you
+    # optional local LLM
     from app.adapters.llm_ollama import OllamaAdapter
 except Exception:
     OllamaAdapter = None  # graceful fallback
 
 
-def _require_file(path: str, label: str) -> None:
-    if path and not os.path.exists(path):
-        raise FileNotFoundError(f"{label} not found: {path}")
+def _require_file(path: str | Path, label: str) -> None:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"{label} not found: {p}")
 
 
-def build_pipeline(cfg_path: str = "configs/runtime.yaml") -> QAPipeline:
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+def _load_cfg(cfg_path: str | Path) -> Dict[str, Any]:
+    p = Path(cfg_path).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(f"Runtime config not found: {p}")
+    with p.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def build_pipeline(cfg_path: str = None):
+    """
+    Build and return an object with .ask(question, k, temperature, max_tokens, **kwargs).
+    If orchestrator=langchain in config, returns a thin wrapper around a LangChain chain.
+    Otherwise returns the native QAPipeline.
+    """
+    cfg_path = cfg_path or os.environ.get("COTTON_RUNTIME", "configs/runtime.yaml")
+    cfg = _load_cfg(cfg_path)
 
     # ---------------- Embeddings ----------------
     emb_cfg = cfg.get("embedder", {})
@@ -54,20 +81,20 @@ def build_pipeline(cfg_path: str = "configs/runtime.yaml") -> QAPipeline:
     _require_file(ids_path,   "IDs numpy file")
     _require_file(meta_path,  "Chunks metadata JSONL")
 
-    vs = FaissStoreAdapter(index_path=index_path, ids_path=ids_path, meta_path=meta_path)
+    store = FaissStoreAdapter(index_path=index_path, ids_path=ids_path, meta_path=meta_path)
 
     # ---------------- Reranker ----------------
     rr_cfg = cfg.get("reranker", {})
-    rr_adapter = rr_cfg.get("adapter", "none").lower()
-    if rr_adapter in ("bge_reranker", "bge-reranker"):
+    rr_adapter = (rr_cfg.get("adapter") or "none").lower()
+    if rr_adapter in ("bge_reranker", "bge-reranker", "bge"):
         rr_model = rr_cfg.get("model", "BAAI/bge-reranker-base")
-        rr = BGERerankerAdapter(model_name=rr_model)
+        reranker = BGERerankerAdapter(model_name=rr_model)
     else:
-        rr = NoopReranker()
+        reranker = NoopReranker()
 
     # ---------------- LLM ----------------
     llm_cfg = cfg.get("llm", {})
-    llm_adapter = llm_cfg.get("adapter", "openai").lower()
+    llm_adapter = (llm_cfg.get("adapter") or "openai").lower()
 
     if llm_adapter == "openai":
         model = llm_cfg.get("model", "gpt-4o-mini")
@@ -75,12 +102,63 @@ def build_pipeline(cfg_path: str = "configs/runtime.yaml") -> QAPipeline:
 
     elif llm_adapter == "ollama":
         if OllamaAdapter is None:
-            raise RuntimeError("llm.adapter=ollama but app.adapters.llm_ollama not available. "
-                               "Add the adapter file or switch adapter.")
+            raise RuntimeError(
+                "llm.adapter=ollama but app.adapters.llm_ollama not available. "
+                "Add the adapter file or switch adapter."
+            )
         model = llm_cfg.get("model", "llama3.1")
         llm = OllamaAdapter(model=model)
-
     else:
         raise ValueError(f"Unknown llm.adapter: {llm_adapter}")
 
-    return QAPipeline(emb, vs, rr, llm)
+    # ---------------- Orchestrator toggle ----------------
+    orchestrator = (cfg.get("orchestrator") or "native").lower()
+    if orchestrator == "langchain":
+        # Lazy import so native users don't need langchain installed
+        try:
+            from rag.chain import build_chain  # your LCEL graph
+        except Exception as e:
+            raise RuntimeError(
+                "orchestrator=langchain but rag.chain.build_chain is unavailable. "
+                "Install langchain and add rag/langchain_adapters.py + rag/chain.py."
+            ) from e
+
+        # Retrieval knobs
+        r_cfg = cfg.get("retrieval", {}) or {}
+        k = int(r_cfg.get("k", 6))
+        mode = r_cfg.get("mode", "dense")
+        filters = r_cfg.get("filters", {}) or {}
+        use_rerank = bool(r_cfg.get("rerank", True))
+
+        chain = build_chain(
+            emb=emb,
+            store=store,
+            reranker=reranker,
+            llm=llm,
+            k=k,
+            mode=mode,
+            filters=filters,
+            use_rerank=use_rerank,
+        )
+
+        class LangChainWrapper:
+            """Expose a .ask(...) that mirrors the native pipeline contract."""
+
+            def ask(self, question: str, k: int = 6, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
+                payload = {
+                    "question": question,
+                    "temperature": float(temperature),
+                    "max_tokens": int(max_tokens),
+                }
+                # chain.invoke returns {"answer", "usage", "citations"}
+                out = chain.invoke(payload)
+                return {
+                    "answer": out.get("answer", ""),
+                    "sources": out.get("citations", []),  # keep API layer happy
+                    "usage": out.get("usage"),
+                }
+
+        return LangChainWrapper()
+
+    # Default: native pipeline
+    return QAPipeline(emb, store, reranker, llm)

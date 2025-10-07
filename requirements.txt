@@ -37,3 +37,9 @@ black==24.10.0
 # --- YAML + LLM client
 PyYAML==6.0.2
 openai==1.47.0
+
+
+#----Lanchain
+langchain==0.2.10
+langchain-core==0.2.30
+langchain-community==0.2.9

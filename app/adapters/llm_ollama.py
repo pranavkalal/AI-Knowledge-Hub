@@ -1,32 +1,50 @@
-"""
-LLM adapter for local inference via Ollama (http://localhost:11434).
-No tokens, no bills. Good for dev and demos.
-"""
+# app/adapters/llm_ollama.py
+import os, requests
 
-from typing import Tuple, Dict
-import requests
-from app.ports import LLMPort
-
-class OllamaAdapter(LLMPort):
-    def __init__(self, model: str = "llama3.1", host: str = "http://localhost:11434"):
+class OllamaAdapter:
+    def __init__(self, model: str, host: str | None = None, timeout: int = 120):
         self.model = model
-        self.host = host.rstrip("/")
+        self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        self.timeout = timeout
 
-    def chat(self, system: str, user: str, temperature: float, max_tokens: int) -> Tuple[str, Dict]:
-        payload = {
+    def _raise(self, r):
+        # Try to extract Ollama's JSON error; otherwise show plain text
+        try:
+            msg = r.json().get("error")
+        except Exception:
+            msg = r.text
+        raise RuntimeError(f"Ollama {r.status_code}: {msg}")
+
+    def chat(self, system: str, user: str, temperature: float, max_tokens: int):
+        # Prefer chat; older daemons lack it.
+        chat_url = f"{self.host}/api/chat"
+        body = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "options": {
-                "temperature": float(temperature),
-                "num_predict": int(max_tokens),
-            },
+            "options": {"temperature": temperature, "num_predict": max_tokens},
             "stream": False,
         }
-        r = requests.post(f"{self.host}/api/chat", json=payload, timeout=120)
-        r.raise_for_status()
+        r = requests.post(chat_url, json=body, timeout=self.timeout)
+        if r.status_code == 404:
+            # Fall back to /api/generate
+            gen_url = f"{self.host}/api/generate"
+            prompt = f"{system}\n\n{user}"
+            gbody = {
+                "model": self.model,
+                "prompt": prompt,
+                "options": {"temperature": temperature, "num_predict": max_tokens},
+                "stream": False,
+            }
+            rg = requests.post(gen_url, json=gbody, timeout=self.timeout)
+            if rg.status_code >= 400:
+                self._raise(rg)
+            data = rg.json()
+            return data.get("response", ""), {"endpoint": "generate"}
+        if r.status_code >= 400:
+            self._raise(r)
         data = r.json()
-        msg = data.get("message", {}).get("content", "")
-        return msg, {"provider": "ollama", "model": self.model}
+        msg = data.get("message", {}).get("content") or data.get("response", "")
+        return msg, {"endpoint": "chat"}
