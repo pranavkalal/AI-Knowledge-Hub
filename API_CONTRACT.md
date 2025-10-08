@@ -5,6 +5,7 @@
 **GET** `/api/health`  
 
 ### 200 Response
+
 ```json
 {
   "status": "ok"
@@ -12,6 +13,7 @@
 ```
 
 ### Query Params
+
 - `q` (string, required) — search text  
 - `k` (int, optional, default = 8) — number of results to return  
 - `neighbors` (int, optional, default = 2) — how many chunks around the hit to stitch  
@@ -22,7 +24,8 @@
 
 ---
 
-### 200 Response
+### 200 Response 2
+
 ```json
 {
   "query": "string",
@@ -47,7 +50,8 @@
 }
 ```
 
-Error Response
+ErrorResponse
+
 ``` json
 {
   "error": {
