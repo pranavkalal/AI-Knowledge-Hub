@@ -1,16 +1,18 @@
 run_name: "crdc_ingest_2022_2025"
+
 years: [2020, 2021, 2022, 2023, 2024, 2025]
 
 seed_urls:
-  - "https://www.insidecotton.com/categories/2020-final-reports"
-  - "https://www.insidecotton.com/categories/2021-final-reports"
-  - "https://www.insidecotton.com/categories/2022-final-reports"
+#  - "https://www.insidecotton.com/categories/2020-final-reports"
+ # - "https://www.insidecotton.com/categories/2021-final-reports"
+  #- "https://www.insidecotton.com/categories/2022-final-reports"
   - "https://www.insidecotton.com/categories/2023-final-reports"
   - "https://www.insidecotton.com/categories/2024-final-reports"
   - "https://www.insidecotton.com/categories/2025-final-reports"
-  
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
+
 include_patterns:
-  - "\\.pdf$"
+  - "\\.pdf($|\\?)"
   - "(?i)final\\s*report"
 
 exclude_patterns:
@@ -19,6 +21,7 @@ exclude_patterns:
   - "(?i)poster"
 
 timeout_secs: 20
+# concurrency key kept for future use; current code is polite single-thread
 concurrency: 4
 retry:
   attempts: 3
@@ -31,6 +34,6 @@ paths:
 output:
   jsonl: "data/staging/docs.jsonl"
   csv:   "data/staging/docs.csv"
+
 download_dir: "data/raw"
 user_agent: "CRDC-Knowledge-Hub-Ingest-QUT/0.1"
-

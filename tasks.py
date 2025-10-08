@@ -1,14 +1,13 @@
 # tasks.py
-# Cross-platform task runner (Invoke). Primary entrypoints:
-#   invoke build        # ingest -> chunk -> embed -> faiss
-#   invoke dev          # ensure index, then run API + UI together
-# Optional helpers:
-#   invoke api          # FastAPI only (dev reload)
-#   invoke ui           # Streamlit only
-#   invoke ingest|chunk|embed|faiss|query|eval-extract|clean|clobber|rebuild
+# Invoke is the source of truth.
+# Primary:
+#   invoke build   -> ingest -> (clean) -> chunk -> embed -> faiss  (fails fast if empty)
+#   invoke dev     -> ensure index, then run API + UI together (cleans up API on exit)
+# Helpers:
+#   invoke api | ui | ingest | clean-extract | chunk | embed | faiss | query | eval-extract | clean | clobber | rebuild
 
 from invoke import task
-import os, sys, subprocess, signal, time
+import os, sys, subprocess, time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -44,10 +43,22 @@ def _run(cmd, env: dict | None = None, **kwargs):
     return subprocess.run(cmd, shell=True, check=True, env=base, **kwargs)
 
 def _ensure_parent(path: Path):
-    """Ensure the parent directory exists (works for file paths)."""
-    path = Path(path)
-    parent = path if path.suffix == "" else path.parent
+    """Ensure the parent directory exists (works for both file and dir paths)."""
+    p = Path(path)
+    parent = p if p.suffix == "" else p.parent
     parent.mkdir(parents=True, exist_ok=True)
+
+def _jsonl_count(path: Path) -> int:
+    if not Path(path).exists():
+        return 0
+    with open(path, "r", encoding="utf-8") as f:
+        return sum(1 for _ in f)
+
+def _assert_nonempty(label: str, path: Path, hint: str):
+    n = _jsonl_count(path)
+    if n == 0:
+        raise SystemExit(f"[{label}] produced 0 records at {path}.\nHint: {hint}")
+    print(f"[{label}] {n} records at {path}")
 
 @task
 def ingest(c, config=None):
@@ -63,7 +74,7 @@ def ingest(c, config=None):
     _ensure_parent(RAW_DIR)
     _run(f"{PY} -m app.ingest --config {cfg}")
 
-@task
+@task(name="clean-extract")
 def clean_extract(c):
     """Optional cleaning pass into cleaned.jsonl (if you use it)."""
     _ensure_parent(CLEANED)
@@ -79,6 +90,8 @@ def chunk(c, max_tokens=512, overlap=64, use_cleaned=True):
 @task
 def embed(c):
     """Build embeddings.npy + ids.npy"""
+    if _jsonl_count(CHUNKS) == 0:
+        raise SystemExit("No chunks with text found. Check data/staging/chunks.jsonl (ingestion probably produced 0 docs).")
     _ensure_parent(EMB_EDS)
     _run(
         f'{PY} -m scripts.build_embeddings '
@@ -100,12 +113,18 @@ def build(c):
     if not RAW_DIR.exists():
         raise SystemExit("No data/raw directory found. Put PDFs in data/raw/")
     ingest(c)
-    # run cleaning step only if module exists, otherwise skip quietly
+    _assert_nonempty(
+        "ingest", DOCS,
+        "Source pages returned 415 or discovery found no links. Fix headers/methods in rag/ingest_lib/discover.py "
+        "or drop a few PDFs into data/raw/ and rerun."
+    )
+    # optional clean step
     try:
-        clean_extract(c)  # safe if app.clean_extract exists
+        clean_extract(c)
     except subprocess.CalledProcessError:
-        print("[warn] clean_extract failed or module missing; continuing with raw docs.jsonl")
+        print("[warn] clean_extract missing; continuing with docs.jsonl")
     chunk(c)
+    _assert_nonempty("chunk", CHUNKS, "docs.jsonl empty, so nothing to chunk. Fix ingestion first.")
     embed(c)
     faiss(c)
 
@@ -130,7 +149,7 @@ def ui(c):
 def dev(c, reload=True):
     """
     Ensure index exists, then run API + UI together.
-    Ctrl+C in the Streamlit window will shut down API too.
+    Works on Windows/macOS/Linux. Ctrl+C in Streamlit will shut down API too.
     """
     if not FAISS_IDX.exists():
         print("FAISS index missing → running full build...")
@@ -140,15 +159,12 @@ def dev(c, reload=True):
     env_api = os.environ.copy()
     env_api["PYTHONPATH"] = f'{Path(".").resolve()}{os.pathsep}{env_api.get("PYTHONPATH","")}'
 
+    # Build uvicorn args and start API in background
     api_args = [PY, "-m", "uvicorn", "app.main:app", "--host", API_HOST, "--port", str(API_PORT)]
     if reload_flag:
         api_args.append(reload_flag)
-    api_proc = subprocess.Popen(
-        api_args,
-        env=env_api,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
+
+    api_proc = subprocess.Popen(api_args, env=env_api)
     print(f"[api] pid={api_proc.pid} http://localhost:{API_PORT}/api")
 
     # crude health wait
@@ -162,8 +178,11 @@ def dev(c, reload=True):
             try:
                 api_proc.terminate()
                 api_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                api_proc.kill()
+            except Exception:
+                try:
+                    api_proc.kill()
+                except Exception:
+                    pass
 
 @task(name="eval-extract")
 def eval_extract(c):
