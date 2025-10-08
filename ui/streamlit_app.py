@@ -1,5 +1,7 @@
 # ui/streamlit_app.py
-import os, requests, streamlit as st
+import os
+import requests
+import streamlit as st
 
 API_BASE = os.environ.get("COTTON_API_BASE", "http://localhost:8000/api")
 
