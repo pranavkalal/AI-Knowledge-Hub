@@ -24,7 +24,7 @@ HTML_HEADERS = {
 def _guess_year(text: str) -> Optional[int]:
     if not text:
         return None
-    m = re.search(r"(19|20)\d{2}", text)
+    m = re.search(r"\d{4}", text)
     if not m:
         return None
     y = int(m.group(0))
