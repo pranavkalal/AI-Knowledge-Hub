@@ -7,7 +7,10 @@
 #   invoke api | ui | ingest | clean-extract | chunk | embed | faiss | query | eval-extract | clean | clobber | rebuild
 
 from invoke import task
-import os, sys, subprocess, time
+import os
+import sys
+import subprocess
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
