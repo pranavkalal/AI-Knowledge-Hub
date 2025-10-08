@@ -1,72 +1,91 @@
-# AI-Knowledge-Hub
+# 🧠 AI-Knowledge-Hub
 
-A web-based GenAI portal for CRDC to summarize and track R&D investments across structured and unstructured data.
+> Modular GenAI system that transforms unstructured research reports into searchable, summarised insights — powered by retrieval-augmented generation (RAG), vector search, and flexible LLM orchestration.
+
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)]()
+[![FAISS](https://img.shields.io/badge/vectorstore-FAISS-green.svg)]()
+[![LangChain](https://img.shields.io/badge/orchestrator-LangChain%20|%20Native-orange.svg)]()
 
 ---
 
-## Quickstart for Developer
+### 📄 Overview
 
-## 📥 Data Ingestion
+AI-Knowledge-Hub streamlines how organisations access decades of scattered research data.  
+It automates:
 
-We use an ingestion pipeline to collect cotton research PDFs, extract text/metadata, and run quality checks.
+- **Ingestion** of PDFs directly from source sites  
+- **Extraction** of clean text + metadata  
+- **Indexing** with dense embeddings (BGE-small-en-v1.5)  
+- **Retrieval-Augmented Q&A** with inline citations  
+- **Swappable orchestration** between Native Python ports and LangChain
+
+For the detailed architecture report, see [`docs/AI-Knowledge-Hub-Overview.pdf`](./docs/AI-Knowledge-Hub-Overview.pdf).
+
+---
+
+## ⚙️ Requirements
+
+| Component | Version | Purpose |
+|------------|----------|----------|
+| **Python** | 3.10 + | Core runtime |
+| **Ollama** | 0.1.32 + | Local LLMs  |
+| **pip** | latest | Dependency installer |
+| **FAISS** | via `requirements.txt` | Vector index |
+| **Git** | any recent | Repo management |
+
+Optional: `make` (macOS/Linux). Windows users can run everything with `invoke`.
+
+---
+
+## 🚀 Quickstart
+
+### 1. Clone and Set Up
 
 ```bash
-make ingest
-
-make eval.extract
+git clone https://github.com/your-org/AI-Knowledge-Hub.git
+cd AI-Knowledge-Hub
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-## Chunking & Sanity Checks
-
-Split cleaned text into manageable chunks and run basic stats.
+### 2. Verify Ollama
 
 ```bash
-python app/chunk.py --in data/staging/docs.jsonl --out data/staging/chunks.jsonl --max_tokens 512 --overlap 64
-
-python scripts_sanity/chunk_stats.py --in data/staging/chunks.jsonl
-
+ollama pull llama3
+ollama list
 ```
 
-This prints:
-number of docs and total chunks
-avg/min/max tokens per chunk (with P50 and P90)
-avg/min/max chars per chunk
-sample chunk preview
+### 3. Environment Variables
 
-## Embeddings & FAISS (Prototype)
+Create .env and then copy contents from .env.examplen to .env
 
-Generate dense embeddings using `BAAI/bge-small-en-v1.5` and index them with FAISS for retrieval.
+## 🧩 Running the Pipeline
+
+All automation is handled by Invoke tasks.
+List them:
 
 ```bash
-make embed      # builds embeddings.npy and ids.npy from chunks.jsonl
-make faiss      # builds vectors.faiss index from embeddings.npy
-make query      # run a test query against the FAISS index
+invoke --list
 ```
 
-The query step prints the top-k retrieved chunks with:
-similarity score
-chunk/document id
-title and year (if available)
-short text preview
-
-## API
-
-We expose a FastAPI service that wraps retrieval behind a `/search` endpoint.
-
-### Run the API
+### Full Build
 
 ```bash
-make api      # dev mode with auto-reload
-make api-prod # prod-like mode with multiple workers
- ```
+invoke build
+```
 
- By default it starts on <http://localhost:8000>.
-Docs UI: <http://localhost:8000/docs>
-OpenAPI schema: <http://localhost:8000/openapi.json>
+Development Mode (API + UI)
 
-## Contract
+```bash
+invoke dev
+```
 
-The /search endpoint takes a query (q) and optional params (k, neighbors, cursor, filters).
-Response includes metadata, stitched preview text, and FAISS similarity scores.
+API → http://localhost:8000/docs
+UI → http://localhost:8501
 
-👉 Full details in API_CONTRACT.md
+Example Query
+
+```bash
+invoke query -q "How does soil management affect water use efficiency?"
+```
