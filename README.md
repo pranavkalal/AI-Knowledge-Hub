@@ -58,7 +58,7 @@ ollama list
 
 ### 3. Environment Variables
 
-Create .env and then copy contents from .env.examplen to .env
+Create .env and then copy contents from .env.example to .env
 
 ## 🧩 Running the Pipeline
 
