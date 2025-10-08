@@ -213,20 +213,25 @@ def main():
         return
 
     for rank, (score, cid, rec) in enumerate(results, 1):
-        print(f"#{rank} score={score:.3f} id={cid}")
-        print(f"   title: {rec.get('title') or rec.get('doc_id') or '?'}")
-        print(f"   year:  {rec.get('year', '?')}")
         prev = stitch_preview(
             rec, lookup,
             neighbors=args.neighbors,
             max_chars=args.max_preview_chars,
             no_truncate=args.no_truncate
         )
+        title = rec.get("title") or rec.get("doc_id") or "?"
+        year = rec.get("year")
+        year_str = str(year) if year is not None else "?"
+        page = rec.get("page")
+        page_str = str(page) if page is not None else "-"
+        snippet = (prev or "").replace("\n", " ").strip()
+        snippet = snippet[:180]
+        print(f"{rank:>2} {score:.3f}  {title} ({year_str})  p{page_str}  {snippet}...")
         if args.show_counts:
             w, c, t = maybe_counts(prev)
             tok_str = f", tokens~{t}" if t is not None else ""
             print(f"   counts: {w} words, {c} chars{tok_str}")
-        print(f"   text:  {prev}\n")
+        print()
 
 
 if __name__ == "__main__":
