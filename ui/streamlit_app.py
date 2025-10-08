@@ -119,4 +119,4 @@ with tabs[1]:
                 c1, c2, c3 = st.columns(3)
                 c1.caption(f"doc_id: `{h.get('doc_id','')}`")
                 c2.caption(f"score: {round(h.get('score', 0.0), 3)}")
-                c3.caption(f"chunk: {h.get('chunk_id','')}`")
+                c3.caption(f"chunk: `{h.get('chunk_id','')}`")
