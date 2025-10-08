@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional, Dict
-from pypdf import PdfReader  # use PyPDF2/pypdf
+from pypdf import PdfReader  # pypdf works cross-platform
 import datetime
 import os
 
@@ -14,9 +14,10 @@ def extract_text(pdf_path: str) -> str:
     chunks = []
     for page in reader.pages:
         try:
-            chunks.append(page.extract_text() or "")
+            txt = page.extract_text() or ""
         except Exception:
-            chunks.append("")
+            txt = ""
+        chunks.append(txt)
     return "\n".join(chunks).strip()
 
 def parse_pdf(pdf_path: str, extra_meta: Optional[Dict[str, str]] = None) -> ParsedPDF:
