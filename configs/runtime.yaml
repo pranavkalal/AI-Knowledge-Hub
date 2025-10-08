@@ -1,7 +1,10 @@
 # configs/runtime.yaml
+orchestrator: native            # choose between "langchain" or "native"
+
 embedder:
   adapter: bge_local
   model: BAAI/bge-small-en-v1.5
+  normalize: true                  # recommended so inner-product ≈ cosine
 
 vector_store:
   adapter: faiss_local
@@ -10,11 +13,20 @@ vector_store:
   meta: data/staging/chunks.jsonl
 
 reranker:
-  adapter: bge_reranker         # or "none" if you haven’t added the adapter file yet
+  adapter: bge_reranker            # or "none"
   model: BAAI/bge-reranker-base
 
 llm:
-  adapter: ollama               # "openai" if you actually want to pay
-  model: llama3.1               # or mistral, qwen2.5, phi3, etc.
+  adapter: ollama                  # set to "openai" if you like invoices
+  model: llama3.1:8b      # must match what you `ollama pull`
   temperature: 0.2
   max_output_tokens: 800
+
+retrieval:
+  k: 6
+  mode: dense                      # dense | bm25 | hybrid (your store decides)
+  rerank: true
+  filters:
+    year_min: 2019
+    year_max: 2025
+    # add other keys your store supports, e.g. contains, neighbors, per_doc

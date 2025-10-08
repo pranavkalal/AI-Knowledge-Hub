@@ -7,8 +7,12 @@ pyarrow==16.1.0
 fastapi==0.114.2
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
-streamlit
-watchdog
+python-dotenv==1.0.1
+requests==2.32.3
+
+# --- UI
+streamlit==1.37.0
+watchdog==4.0.1
 
 # --- Embeddings / NLP
 sentence-transformers==3.0.1
@@ -17,9 +21,7 @@ tokenizers==0.19.1
 accelerate==0.33.0
 tiktoken==0.7.0
 
-# PyTorch:
-# Leave it here for platforms where pip works out of the box (macOS x86/arm64, most Windows).
-# If someone has trouble, they should install torch via the official command for their CUDA/CPU, then re-run pip for the rest.
+# PyTorch (install works on macOS CPU by default; MPS/CUDA install per host if needed)
 torch==2.3.1
 
 # --- Vector search
@@ -29,9 +31,15 @@ faiss-cpu==1.8.0.post1
 rich==13.7.1
 ruff==0.6.8
 pytest==8.3.3
-python-dotenv==1.0.1
 invoke==2.1.1
 black==24.10.0
 
-PyYAML
-openai
+# --- YAML + LLM client
+PyYAML==6.0.2
+openai==1.47.0
+
+
+#----Lanchain
+langchain==0.2.10
+langchain-core==0.2.30
+langchain-community==0.2.9
