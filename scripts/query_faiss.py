@@ -12,6 +12,10 @@ Inputs:
 
 Usage:
   python scripts/query_faiss.py --q "irrigation efficiency 2018" --k 8 --neighbors 1 --per-doc 2 --show-counts
+
+Example:
+  >>> python scripts/query_faiss.py --q "irrigation" --no-show-titles
+  #1 score=0.842 id=DOC_chunk0001
 """
 
 import argparse
@@ -135,6 +139,12 @@ def main():
     ap.add_argument("--no-truncate", action="store_true", help="print full stitched preview (ignore char cap)")
     ap.add_argument("--show-counts", action="store_true", help="print word/char/token counts for previews")
     ap.add_argument("--model", default="BAAI/bge-small-en-v1.5", help="embedding model (kept for parity with API)")
+    ap.add_argument(
+        "--show-titles",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="include title/year/page metadata in pretty output (use --no-show-titles for minimal lines)",
+    )
     args = ap.parse_args()
 
     # 1) Load FAISS index and ids
@@ -219,19 +229,25 @@ def main():
             max_chars=args.max_preview_chars,
             no_truncate=args.no_truncate
         )
-        title = rec.get("title") or rec.get("doc_id") or "?"
-        year = rec.get("year")
-        year_str = str(year) if year is not None else "?"
-        page = rec.get("page")
-        page_str = str(page) if page is not None else "-"
-        snippet = (prev or "").replace("\n", " ").strip()
-        snippet = snippet[:180]
-        print(f"{rank:>2} {score:.3f}  {title} ({year_str})  p{page_str}  {snippet}...")
+        if args.show_titles:
+            title = rec.get("title") or rec.get("doc_id") or "?"
+            year = rec.get("year")
+            year_str = str(year) if year is not None else "?"
+            page = rec.get("page")
+            page_str = str(page) if page is not None else "-"
+            snippet = (prev or "").replace("\n", " ").strip()
+            snippet = snippet[:180]
+            print(f"{rank:>2} {score:.3f}  {title} ({year_str})  p{page_str}  {snippet}...")
+        else:
+            print(f"#{rank} score={score:.3f} id={cid}")
         if args.show_counts:
             w, c, t = maybe_counts(prev)
             tok_str = f", tokens~{t}" if t is not None else ""
             print(f"   counts: {w} words, {c} chars{tok_str}")
-        print()
+        if args.show_titles:
+            print()
+        else:
+            print(f"   text:  {prev}\n")
 
 
 if __name__ == "__main__":
