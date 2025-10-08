@@ -136,12 +136,15 @@ def dev(c, reload=True):
         print("FAISS index missing → running full build...")
         build(c)
 
-    reload_flag = "--reload" if str(reload).lower() != "false" else ""
+    reload_flag = "--reload" if str(reload).lower() != "false" else None
     env_api = os.environ.copy()
     env_api["PYTHONPATH"] = f'{Path(".").resolve()}{os.pathsep}{env_api.get("PYTHONPATH","")}'
 
+    api_args = [PY, "-m", "uvicorn", "app.main:app", "--host", API_HOST, "--port", str(API_PORT)]
+    if reload_flag:
+        api_args.append(reload_flag)
     api_proc = subprocess.Popen(
-        [PY, "-m", "uvicorn", "app.main:app", "--host", API_HOST, "--port", str(API_PORT), reload_flag],
+        api_args,
         env=env_api,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
