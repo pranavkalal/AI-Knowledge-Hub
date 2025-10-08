@@ -63,8 +63,8 @@ with tabs[0]:
             with st.container(border=True):
                 title = c.get("title") or "(untitled)"
                 page = c.get("page", "—")
-                doc_id = c.get("doc_id","")
-                span = c.get("span","")
+                doc_id = c.get("doc_id", "")
+                span = c.get("span", "")
                 score = c.get("score", None)
                 head = f"**{i}. {title}** · page {page}"
                 if score is not None:
