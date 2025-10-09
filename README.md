@@ -2,13 +2,7 @@
 
 > Modular GenAI system that transforms unstructured research reports into searchable, summarised insights — powered by retrieval-augmented generation (RAG), vector search, and flexible LLM orchestration.
 
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)]()
-[![FAISS](https://img.shields.io/badge/vectorstore-FAISS-green.svg)]()
-[![LangChain](https://img.shields.io/badge/orchestrator-LangChain%20|%20Native-orange.svg)]()
-
----
-
-### 📄 Overview
+### Overview
 
 AI-Knowledge-Hub streamlines how organisations access decades of scattered research data.  
 It automates:
