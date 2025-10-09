@@ -125,10 +125,13 @@ def build_pipeline(cfg_path: str = None):
 
         # Retrieval knobs
         r_cfg = cfg.get("retrieval", {}) or {}
+        langchain_cfg = cfg.get("langchain", {}) or {}
         k = int(r_cfg.get("k", 6))
         mode = r_cfg.get("mode", "dense")
         filters = r_cfg.get("filters", {}) or {}
         use_rerank = bool(r_cfg.get("rerank", True))
+        use_multiquery = bool(r_cfg.get("use_multiquery", False))
+        use_compression = bool(r_cfg.get("use_compression", False))
 
         chain = build_chain(
             emb=emb,
@@ -139,10 +142,18 @@ def build_pipeline(cfg_path: str = None):
             mode=mode,
             filters=filters,
             use_rerank=use_rerank,
+            use_multiquery=use_multiquery,
+            use_compression=use_compression,
+            llm_config=langchain_cfg,
         )
+        stream_enabled = bool(langchain_cfg.get("stream", False))
 
         class LangChainWrapper:
-            """Expose a .ask(...) that mirrors the native pipeline contract."""
+            """Expose helpers for sync and streamed answers."""
+
+            def __init__(self, chain, stream_enabled: bool):
+                self.chain = chain
+                self.stream_enabled = stream_enabled
 
             def ask(self, question: str, k: int = 6, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
                 payload = {
@@ -150,15 +161,36 @@ def build_pipeline(cfg_path: str = None):
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                 }
-                # chain.invoke returns {"answer", "usage", "citations"}
-                out = chain.invoke(payload)
+                out = self.chain.invoke(payload)
                 return {
                     "answer": out.get("answer", ""),
-                    "sources": out.get("citations", []),  # keep API layer happy
+                    "sources": out.get("citations", []),
                     "usage": out.get("usage"),
                 }
 
-        return LangChainWrapper()
+            async def stream(self, question: str, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
+                if not self.stream_enabled:
+                    raise RuntimeError("Streaming not enabled")
+                payload = {
+                    "question": question,
+                    "temperature": float(temperature),
+                    "max_tokens": int(max_tokens),
+                }
+                async for event in self.chain.astream_events(payload):
+                    evt_type = event.get("event")
+                    data = event.get("data") or {}
+                    if evt_type == "on_llm_stream":
+                        chunk = data.get("chunk")
+                        if isinstance(chunk, dict):
+                            chunk = chunk.get("content") or chunk.get("text")
+                        if chunk:
+                            yield {"type": "token", "token": chunk}
+                    elif evt_type == "on_chain_end":
+                        output = data.get("output") or {}
+                        yield {"type": "final", "output": output}
+                        return
+
+        return LangChainWrapper(chain, stream_enabled)
 
     # Default: native pipeline
     return QAPipeline(emb, store, reranker, llm)

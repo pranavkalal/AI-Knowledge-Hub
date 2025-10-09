@@ -25,6 +25,7 @@ from collections import defaultdict
 
 # Unified embedding path: same as API
 from app.adapters.embed_bge import BGEEmbeddingAdapter
+from app.services.formatting import format_citation, format_metadata, format_snippet
 from store.store_faiss import FaissFlatIP
 from rag.retrieval.utils import (
     neighbor_ids,
@@ -130,21 +131,25 @@ def main():
                 max_chars=args.max_preview_chars,
                 no_truncate=args.no_truncate
             )
-            out = {
-                "score": round(score, 3),
-                "id": cid,
-                "doc_id": rec.get("doc_id"),
-                "title": rec.get("title"),
-                "year": rec.get("year"),
-                "preview": preview,
+            hit = {
+                "score": float(score),
+                "metadata": {
+                    **rec,
+                    "preview": preview,
+                },
             }
+            payload = format_citation(hit)
+            payload.update({
+                "id": cid,
+                "score": round(score, 3),
+            })
             if args.show_counts:
                 w, c, t = maybe_counts(preview)
-                out["preview_words"] = w
-                out["preview_chars"] = c
+                payload["preview_words"] = w
+                payload["preview_chars"] = c
                 if t is not None:
-                    out["preview_tokens"] = t
-            print(json.dumps(out, ensure_ascii=False))
+                    payload["preview_tokens"] = t
+            print(json.dumps(payload, ensure_ascii=False))
         return
 
     for rank, (score, cid, rec) in enumerate(results, 1):
@@ -154,24 +159,19 @@ def main():
             max_chars=args.max_preview_chars,
             no_truncate=args.no_truncate
         )
-        if args.show_titles:
-            title = rec.get("title") or rec.get("doc_id") or "?"
-            year = rec.get("year")
-            year_str = str(year) if year is not None else "?"
-            page = rec.get("page")
-            page_str = str(page) if page is not None else "-"
-            snippet = (prev or "").replace("\n", " ").strip()
-            snippet = snippet[:180]
-            print(f"{rank:>2} {score:.3f}  {title} ({year_str})  p{page_str}  {snippet}...")
-        else:
-            print(f"#{rank} score={score:.3f} id={cid}")
+        snippet = format_snippet(prev or "", length=180)
+        meta_suffix = format_metadata(rec)
+        title = rec.get("title") or rec.get("doc_id") or "?"
+        header = f"{rank:>2} {score:.3f}  {title}"
+        if meta_suffix:
+            header = f"{header} {meta_suffix}"
+        print(f"{header}  {snippet}")
+
         if args.show_counts:
             w, c, t = maybe_counts(prev)
             tok_str = f", tokens~{t}" if t is not None else ""
             print(f"   counts: {w} words, {c} chars{tok_str}")
-        if args.show_titles:
-            print()
-        else:
+        if not args.show_titles:
             print(f"   text:  {prev}\n")
 
 

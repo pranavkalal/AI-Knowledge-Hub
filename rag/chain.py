@@ -5,12 +5,14 @@ Wraps your retriever, optional reranker, and LLM into an LCEL graph.
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.documents import Document
 from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 
 from rag.langchain_adapters import PortsRetriever, RerankDecoratorRetriever
+from rag.callbacks import LoggingCallbackHandler
 
 
 SYSTEM_PROMPT = (
@@ -123,8 +125,24 @@ def build_chain(
     mode: str = "dense",
     filters: Dict[str, Any] | None = None,
     use_rerank: bool = True,
+    use_multiquery: bool = False,
+    use_compression: bool = False,
+    llm_config: Optional[Dict[str, Any]] = None,
 ) -> Runnable:
     filters = filters or {}
+
+    if mode == "router":
+        from rag.router_chain import build_router_chain
+
+        return build_router_chain(
+            emb=emb,
+            store=store,
+            reranker=reranker,
+            llm=llm,
+            default_k=k,
+            base_filters=filters,
+            use_rerank=use_rerank,
+        )
 
     contains = _sanitize_contains(filters.get("contains"))
     year_min = _maybe_int(filters.get("year_min") or filters.get("year_from"))
@@ -160,6 +178,51 @@ def build_chain(
         diversify_per_doc=diversify_flag,
     )
 
+    if use_multiquery:
+        try:
+            from langchain.retrievers import MultiQueryRetriever
+            adapter_name = (llm_config or {}).get("adapter", "ollama").lower() if isinstance(llm_config, dict) else "ollama"
+            model_name = (llm_config or {}).get("model") if isinstance(llm_config, dict) else None
+
+            if adapter_name == "ollama":
+                from langchain_community.chat_models import ChatOllama
+
+                retriever_llm = ChatOllama(model=model_name or "llama3.1:8b", temperature=0)
+            else:
+                from langchain_openai import ChatOpenAI
+
+                retriever_llm = ChatOpenAI(model=model_name or "gpt-4o-mini", temperature=0)
+
+            retriever = MultiQueryRetriever.from_llm(
+                retriever=retriever,
+                llm=retriever_llm,
+            )
+        except Exception as exc:
+            print(f"[warn] MultiQueryRetriever unavailable: {exc}")
+
+    if use_compression:
+        try:
+            from langchain.retrievers import ContextualCompressionRetriever
+            from langchain.retrievers.document_compressors import EmbeddingsFilter
+
+            class _EmbeddingsWrapper:
+                def __init__(self, adapter):
+                    self.adapter = adapter
+
+                def embed_documents(self, texts):
+                    return self.adapter.embed_texts(list(texts))
+
+                def embed_query(self, text):
+                    return self.adapter.embed_query(text)
+
+            embeddings_wrapper = _EmbeddingsWrapper(emb)
+            retriever = ContextualCompressionRetriever(
+                base_retriever=retriever,
+                base_compressor=EmbeddingsFilter(embeddings=embeddings_wrapper),
+            )
+        except Exception as exc:
+            print(f"[warn] Compression retriever unavailable: {exc}")
+
     if use_rerank and reranker:
         retriever = RerankDecoratorRetriever(base=retriever, reranker=reranker)
 
@@ -183,5 +246,18 @@ def build_chain(
             "citations": out["citations"],
         })
     )
+
+    langchain_cfg = llm_config or {}
+    callbacks: List[Any] = []
+    if langchain_cfg.get("trace"):
+        try:
+            callbacks.append(LoggingCallbackHandler())
+        except Exception as exc:
+            print(f"[warn] LoggingCallbackHandler unavailable: {exc}")
+    if langchain_cfg.get("stream"):
+        callbacks.append(StreamingStdOutCallbackHandler())
+
+    if callbacks:
+        chain = chain.with_config(config={"callbacks": callbacks})
 
     return chain

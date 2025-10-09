@@ -1,53 +1,83 @@
 # app/service/search_service.py
-import json, subprocess, sys, os
-from typing import Dict, Any, List, Optional
+from __future__ import annotations
+
+import os
+from functools import lru_cache
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-DEFAULTS = dict(k=8, neighbors=2, per_doc=2)
+from app.adapters.vector_faiss import FaissStoreAdapter
+from app.services.formatting import format_citation, format_snippet
+from rag.retrieval.utils import resolve_retrieval_settings, prepare_hits
+
+DEFAULTS = dict(k=8, neighbors=2, per_doc=2, max_preview_chars=1800, max_snippet_chars=180)
 ROOT = Path(__file__).resolve().parents[2]   # project root
-QUERY_SCRIPT = ROOT / "scripts" / "query_faiss.py"
 
-def _run_cli(
-    q: str,
-    k: int,
-    neighbors: int,
-    per_doc: int,
-    contains: Optional[str],
-    year_min: Optional[int],
-    year_max: Optional[int],
-) -> List[dict]:
-    if not QUERY_SCRIPT.exists():
-        raise RuntimeError(f"Missing script: {QUERY_SCRIPT}")
 
-    cmd = [
-        sys.executable, str(QUERY_SCRIPT),
-        "--q", q,
-        "--k", str(k),
-        "--neighbors", str(neighbors),
-        "--per-doc", str(per_doc),
-        "--json",
-    ]
-    if contains:
-        cmd += ["--contains", contains]
-    if year_min is not None:
-        cmd += ["--year-min", str(year_min)]
-    if year_max is not None:
-        cmd += ["--year-max", str(year_max)]
+@lru_cache(maxsize=1)
+def _load_store() -> FaissStoreAdapter:
+    index_path = os.environ.get("FAISS_INDEX_PATH", "data/embeddings/vectors.faiss")
+    ids_path = os.environ.get("FAISS_IDS_PATH", "data/embeddings/ids.npy")
+    meta_path = os.environ.get("FAISS_META_PATH", "data/staging/chunks.jsonl")
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = f"{ROOT}{os.pathsep}{env.get('PYTHONPATH','')}"
+    for label, path in (("FAISS index", index_path), ("FAISS ids", ids_path), ("chunks metadata", meta_path)):
+        if not Path(path).exists():
+            raise FileNotFoundError(f"{label} not found: {path}")
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=45)
-    if proc.returncode != 0:
-        raise RuntimeError(f"query_faiss failed (code {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+    return FaissStoreAdapter(index_path=index_path, ids_path=ids_path, meta_path=meta_path)
 
-    out = []
-    for ln in proc.stdout.splitlines():
-        ln = ln.strip()
-        if not ln:
-            continue
-        out.append(json.loads(ln))
-    return out
+
+def search(
+    query: str,
+    top_k: int = DEFAULTS["k"],
+    neighbors: int = DEFAULTS["neighbors"],
+    filters: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Query the FAISS store directly and return formatted search results."""
+    store = _load_store()
+
+    settings_filters: Dict[str, Any] = dict(filters or {})
+    settings_filters.setdefault("neighbors", neighbors)
+    settings_filters.setdefault("per_doc", DEFAULTS["per_doc"])
+    settings_filters.setdefault("max_preview_chars", DEFAULTS["max_preview_chars"])
+    settings_filters.setdefault("max_snippet_chars", DEFAULTS["max_snippet_chars"])
+
+    settings = resolve_retrieval_settings(settings_filters)
+
+    overfetch = max(top_k * 5, 50)
+    raw_hits = store.search_raw(query, top_k=overfetch)
+    hits = prepare_hits(raw_hits, store, settings, limit=top_k)
+
+    results: List[Dict[str, Any]] = []
+    snippet_len = settings.max_snippet_chars if hasattr(settings, "max_snippet_chars") else DEFAULTS["max_snippet_chars"]
+
+    for hit in hits:
+        meta = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+        chunk_id = meta.get("id") or hit.get("id") or ""
+        doc_id = meta.get("doc_id") or chunk_id.split("_chunk")[0]
+
+        citation = format_citation(hit)
+        preview = format_snippet(meta.get("preview") or meta.get("text") or "", length=snippet_len)
+
+        chunk_index = meta.get("chunk_index")
+        if chunk_index is None and "_chunk" in chunk_id:
+            try:
+                chunk_index = int(chunk_id.split("_chunk")[-1])
+            except ValueError:
+                chunk_index = 0
+
+        results.append({
+            "doc_id": doc_id,
+            "chunk_id": int(chunk_index or 0),
+            "score": citation.get("score", 0.0),
+            "title": citation.get("title"),
+            "year": citation.get("year"),
+            "preview": preview,
+            "source_url": meta.get("url"),
+            "filename": meta.get("filename"),
+        })
+
+    return results
 
 
 def search_service(
@@ -63,24 +93,18 @@ def search_service(
     neighbors = neighbors if neighbors is not None else DEFAULTS["neighbors"]
     per_doc = per_doc if per_doc is not None else DEFAULTS["per_doc"]
 
-    rows = _run_cli(q, k, neighbors, per_doc, contains, year_min, year_max)
+    filters: Dict[str, Any] = {
+        "contains": contains,
+        "year_min": year_min,
+        "year_max": year_max,
+        "neighbors": neighbors,
+        "per_doc": per_doc,
+        "max_preview_chars": DEFAULTS["max_preview_chars"],
+        "max_snippet_chars": DEFAULTS["max_snippet_chars"],
+    }
 
-    normalized = []
-    for r in rows:
-        cid = r.get("id") or ""
-        normalized.append({
-            "doc_id": r.get("doc_id") or cid.split("_chunk")[0],
-            "chunk_id": int((cid.split("_chunk")[-1] or "0")[:4]) if "_chunk" in cid else 0,
-            "score": r.get("score", 0.0),
-            "title": r.get("title"),
-            "year": r.get("year"),
-            "preview": r.get("preview") or "",
-            "neighbor_window": None,
-            "source_url": None,
-            "filename": None,
-        })
+    results = search(q, top_k=k, neighbors=neighbors, filters=filters)
 
-    # >>> minimal fix: shape to SearchResponse <<<
     return {
         "query": q,
         "params": {
@@ -91,6 +115,6 @@ def search_service(
             "year_min": year_min,
             "year_max": year_max,
         },
-        "count": len(normalized),
-        "results": normalized,
+        "count": len(results),
+        "results": results,
     }

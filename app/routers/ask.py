@@ -6,8 +6,10 @@ All provider choices live in configs/runtime.yaml.
 
 from time import perf_counter
 from typing import Optional, List
+import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, AliasChoices
 
 from app.factory import build_pipeline
@@ -116,9 +118,38 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
 
 # Accept both /ask and /ask/ to avoid 405s from sloppy URLs
 @router.post("/ask", response_model=AskResponse, response_model_exclude_none=True)
-def ask_post(req: AskRequest):
-    return _run_pipeline(req)
+async def ask_post(req: AskRequest, stream: bool = Query(False)):
+    if not stream:
+        return _run_pipeline(req)
+
+    question = (req.question or "").strip()
+    if len(question) < 5:
+        raise HTTPException(status_code=400, detail="Question too short.")
+
+    pipe = build_pipeline()
+    if not hasattr(pipe, "stream"):
+        raise HTTPException(status_code=400, detail="Streaming not supported by current orchestrator.")
+
+    stream_kwargs = {
+        "k": req.k,
+    }
+    if req.filters is not None:
+        stream_kwargs["filters"] = req.filters.model_dump(exclude_none=True)
+    if req.mode is not None:
+        stream_kwargs["mode"] = req.mode
+    if req.rerank is not None:
+        stream_kwargs["rerank"] = bool(req.rerank)
+
+    async def event_generator():
+        try:
+            async for chunk in pipe.stream(question=question, temperature=req.temperature, max_tokens=req.max_output_tokens, **stream_kwargs):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as exc:
+            print("[/api/ask] stream error:", repr(exc))
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.post("/ask/", response_model=AskResponse, response_model_exclude_none=True)
-def ask_post_slash(req: AskRequest):
-    return _run_pipeline(req)
+async def ask_post_slash(req: AskRequest, stream: bool = Query(False)):
+    return await ask_post(req, stream=stream)
