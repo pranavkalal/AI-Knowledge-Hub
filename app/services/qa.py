@@ -73,19 +73,28 @@ class QAPipeline:
             sid = f"S{i}"
 
             text = md.get("text") or md.get("chunk") or ""
-            snippet = (text[:240] + "…") if len(text) > 240 else text
+            snippet = (text[:500] + "…") if len(text) > 500 else text
 
             title = md.get("title") or md.get("doc_id") or md.get("id") or "Source"
             doc_id = md.get("doc_id") or md.get("id") or ""
+            year = md.get("year")
             page = md.get("page")
-            page_str = f", p.{page}" if page is not None else ""
+            parts = []
+            if year is not None:
+                parts.append(str(year))
+            if doc_id:
+                parts.append(doc_id)
+            if page is not None:
+                parts.append(f"p.{page}")
+            meta_suffix = f" ({', '.join(parts)})" if parts else ""
 
-            lines.append(f"[{sid}] {title} ({doc_id}{page_str}): {snippet}")
+            lines.append(f"[{sid}] {title}{meta_suffix}: {snippet}")
 
             srcs.append({
                 "sid": sid,
                 "doc_id": doc_id,
                 "title": md.get("title"),
+                "year": year,
                 "page": page,
                 "url": md.get("url"),
                 "score": h.get("score"),
@@ -98,5 +107,31 @@ class QAPipeline:
 
         # 6) call LLM
         answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+
+        formatted_sources = []
+        for s in srcs:
+            label = s.get("sid") or ""
+            title = s.get("title") or s.get("doc_id") or "Source"
+            year = s.get("year")
+            page = s.get("page")
+            doc_id = s.get("doc_id")
+            url = s.get("url")
+
+            bits = []
+            if year is not None:
+                bits.append(str(year))
+            if page is not None:
+                bits.append(f"p.{page}")
+            if doc_id:
+                bits.append(doc_id)
+
+            suffix = f" ({', '.join(bits)})" if bits else ""
+            line = f"{label} — {title}{suffix}"
+            if url:
+                line = f"{line} — {url}"
+            formatted_sources.append(line)
+
+        if formatted_sources:
+            answer = f"{answer.strip()}\n\nSources:\n" + "\n".join(f"- {line}" for line in formatted_sources)
 
         return {"answer": answer, "sources": srcs, "usage": usage}
