@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 st.set_page_config(page_title="Cotton Knowledge Hub — Prototype", layout="wide")
-st.title("Cotton Knowledge Hub — Prototype")
+st.title("AI Knowledge Hub — Prototype")
 
 
 @st.cache_resource
@@ -35,18 +35,31 @@ def resolve_api_base(default: Optional[str] = None) -> str:
 
 
 FASTAPI_BASE = resolve_api_base()
-FASTAPI_DOCS = f"{FASTAPI_BASE}/docs"
+API_ROOT = FASTAPI_BASE.rstrip("/")
+if API_ROOT.endswith("/api"):
+    API_ROOT = API_ROOT[:-4]
+API_PREFIX = "/api"
 
-st.caption(f"FastAPI docs: [{FASTAPI_DOCS}]({FASTAPI_DOCS})")
+
+def api_url(path: str) -> str:
+    path = path if path.startswith("/") else f"/{path}"
+    return f"{API_ROOT}{API_PREFIX}{path}"
+
+
+SWAGGER_UI = f"{API_ROOT}/docs"
+
+st.caption(f"Open API Explorer: [{SWAGGER_UI}]({SWAGGER_UI})")
 
 
 @st.cache_data(ttl=30)
 def ping_api(base: str) -> Dict[str, Any]:
     try:
-        resp = requests.get(f"{base}/health", timeout=10)
+        url = api_url("/health")
+        resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         info = resp.json()
         info["status_code"] = resp.status_code
+        info.setdefault("ok", info.get("status", "") == "ok")
         return info
     except Exception as exc:
         return {"ok": False, "error": str(exc), "status_code": None}
@@ -59,9 +72,14 @@ def format_latency(start_time: float) -> str:
 with st.sidebar:
     st.header("Settings")
     st.caption(f"Backend: `{FASTAPI_BASE}`")
-    health = ping_api(FASTAPI_BASE)
-    status = "✅ OK" if health.get("ok") else "⚠️ Down"
-    st.markdown(f"**API status:** {status}")
+    health = st.session_state.get('api_health')
+    if health is None:
+        health = ping_api(FASTAPI_BASE)
+        st.session_state['api_health'] = health
+    status_flag = health.get("ok")
+    supports_streaming = bool(health.get("streaming"))
+    status_label = "✅ Up" if status_flag else "⚠️ Down"
+    st.markdown(f"**API status:** {status_label}")
     version = health.get("version") or health.get("build") or "unknown"
     st.caption(f"Backend version: {version}")
 
@@ -72,9 +90,14 @@ with st.sidebar:
     year_min = y1.number_input("Year min", value=2019, step=1, format="%d")
     year_max = y2.number_input("Year max", value=2025, step=1, format="%d")
 
-    if st.button("Refresh health"):
+    if st.button("Check API health", use_container_width=True):
         ping_api.clear()  # type: ignore[attr-defined]
-        st.rerun()
+        latest = ping_api(FASTAPI_BASE)
+        st.session_state["api_health"] = latest
+        st.toast(
+            f"Health check -> status code {latest.get('status_code')}, status {latest.get('status', 'unknown')}"
+        )
+        st.write(latest)
 
 tabs = st.tabs(["Ask (generation)", "Search (debug)"])
 
@@ -103,6 +126,12 @@ def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
 with tabs[0]:
     st.subheader("Ask a question")
     q = st.text_input("e.g., What environmental outcomes were reported in 2023?")
+    stream_mode = st.toggle(
+        "Stream answer (experimental)",
+        value=False,
+        disabled=not supports_streaming,
+        help="Enable LangChain streaming in runtime config" if not supports_streaming else None,
+    )
     ask_go = st.button("Ask", type="primary")
 
     if ask_go and q.strip():
@@ -113,13 +142,49 @@ with tabs[0]:
             "rerank": bool(rerank),
             "filters": {"year_min": int(year_min), "year_max": int(year_max)},
         }
+        answer_header = st.empty()
+        answer_body = st.empty()
+        citations_header = st.empty()
+        citations_placeholder = st.container()
+        latency_label = st.empty()
+        raw_expander = st.expander("Raw response", expanded=False)
+
         try:
-            with st.spinner("Thinking…"):
-                start = time.time()
-                resp = requests.post(f"{FASTAPI_BASE}/ask", json=payload, timeout=120)
-                resp.raise_for_status()
-                latency = format_latency(start)
-                data = resp.json()
+            if stream_mode:
+                with st.spinner("Streaming…"):
+                    start = time.time()
+                    stream_params = {"stream": "true"}
+                    resp = requests.post(
+                        api_url("/ask"),
+                        params=stream_params,
+                        json=payload,
+                        stream=True,
+                        timeout=None,
+                    )
+                    resp.raise_for_status()
+
+                    tokens: list[str] = []
+                    final_payload: Dict[str, Any] = {}
+
+                    for raw_line in resp.iter_lines(decode_unicode=True):
+                        if not raw_line or not raw_line.startswith("data: "):
+                            continue
+                        packet = json.loads(raw_line[6:])
+                        if packet.get("type") == "token":
+                            tokens.append(packet.get("token", ""))
+                            answer_body.markdown("".join(tokens))
+                        elif packet.get("type") == "final":
+                            final_payload = packet.get("output", {})
+
+                    latency_label.caption(f"Latency: {format_latency(start)}")
+                    data = final_payload or {}
+            else:
+                with st.spinner("Thinking…"):
+                    start = time.time()
+                    resp = requests.post(api_url("/ask"), json=payload, timeout=120)
+                    resp.raise_for_status()
+                    latency_label.caption(f"Latency: {format_latency(start)}")
+                    data = resp.json()
         except Exception as exc:
             st.error(f"/ask failed: {exc}")
             st.stop()
@@ -127,17 +192,17 @@ with tabs[0]:
         answer = data.get("answer") or "(no answer)"
         citations = data.get("citations", [])
 
-        st.markdown("### Answer")
-        st.write(answer)
-        st.caption(f"Latency: {latency}")
+        answer_header.markdown("### Answer")
+        answer_body.write(answer)
 
-        st.markdown("### Citations")
+        citations_header.markdown("### Citations")
         if not citations:
-            st.info("No citations returned.")
+            citations_placeholder.info("No citations returned.")
         else:
-            _render_citations(citations)
+            with citations_placeholder:
+                _render_citations(citations)
 
-        with st.expander("Raw response"):
+        with raw_expander:
             st.json(data)
 
 
@@ -170,7 +235,7 @@ with tabs[1]:
             params["year_max"] = ymax
 
         start = time.time()
-        resp = requests.get(f"{base}/search", params=params, timeout=60)
+        resp = requests.get(api_url("/search"), params=params, timeout=60)
         resp.raise_for_status()
         return {"payload": resp.json(), "latency": format_latency(start)}
 

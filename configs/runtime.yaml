@@ -41,5 +41,5 @@ retrieval:
   use_compression: false
 
 langchain:
-  trace: false
-  stream: false
+  trace: true
+  stream: true

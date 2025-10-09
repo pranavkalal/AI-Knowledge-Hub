@@ -176,7 +176,7 @@ def build_pipeline(cfg_path: str = None):
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                 }
-                async for event in self.chain.astream_events(payload):
+                async for event in self.chain.astream_events(payload, version="v1"):
                     evt_type = event.get("event")
                     data = event.get("data") or {}
                     if evt_type == "on_llm_stream":

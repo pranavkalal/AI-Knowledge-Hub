@@ -6,8 +6,16 @@
 # app/routers/health.py
 from fastapi import APIRouter
 
+from app.factory import build_pipeline
+
 router = APIRouter(tags=["health"])
 
 @router.get("/health")
 def health():
-    return {"status": "ok"}
+    pipeline = build_pipeline()
+    orchestrator = "langchain" if hasattr(pipeline, "stream") else "native"
+    return {
+        "status": "ok",
+        "orchestrator": orchestrator,
+        "streaming": bool(getattr(pipeline, "stream", None)),
+    }

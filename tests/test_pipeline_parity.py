@@ -6,7 +6,6 @@ from typing import Any, Dict, List
 import pytest
 
 from app.factory import build_pipeline
-from app.services.qa import QAPipeline
 
 
 @pytest.fixture()
