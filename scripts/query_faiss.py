@@ -26,87 +26,12 @@ from collections import defaultdict
 # Unified embedding path: same as API
 from app.adapters.embed_bge import BGEEmbeddingAdapter
 from store.store_faiss import FaissFlatIP
-
-
-def neighbor_ids(cid: str, neighbors: int) -> list[str]:
-    """Return list of neighbor chunk ids ±N around cid (expects suffix `_chunkNNNN`)."""
-    if neighbors <= 0:
-        return [cid]
-    base, _, tail = cid.partition("_chunk")
-    try:
-        idx = int(tail)
-    except ValueError:
-        return [cid]
-    ids = []
-    for j in range(idx - neighbors, idx + neighbors + 1):
-        ids.append(f"{base}_chunk{j:04d}")
-    return ids
-
-
-def load_lookup(chunks_path: str, needed_ids: set[str]) -> dict[str, dict]:
-    """Read only the chunk records we actually need into a dict keyed by id."""
-    lookup = {}
-    if not needed_ids:
-        return lookup
-    with open(chunks_path, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            cid = rec.get("id")
-            if cid in needed_ids:
-                lookup[cid] = rec
-                if len(lookup) == len(needed_ids):
-                    break
-    return lookup
-
-
-def passes_filters(rec, contains_any, year_min, year_max):
-    """Apply keyword and year range filters to a chunk record."""
-    if contains_any:
-        text = (rec.get("text") or "").lower()
-        if not any(kw in text for kw in contains_any):
-            return False
-    y = rec.get("year")
-    if year_min is not None and isinstance(y, int) and y < year_min:
-        return False
-    if year_max is not None and isinstance(y, int) and y > year_max:
-        return False
-    return True
-
-
-def stitch_preview(center_rec, lookup, neighbors=1, max_chars=1800, no_truncate=False) -> str:
-    """
-    Stitch ±neighbors chunks from the same doc to form a readable preview.
-    Honors max_chars unless no_truncate=True.
-    """
-    cid = center_rec.get("id", "")
-    center_doc = center_rec.get("doc_id") or cid.split("_chunk")[0]
-    parts = []
-    total_len = 0
-
-    for nid in neighbor_ids(cid, neighbors):
-        rec = lookup.get(nid)
-        if rec and (rec.get("doc_id") or nid.split("_chunk")[0]) == center_doc:
-            txt = (rec.get("text") or "").replace("\n", " ")
-            if not txt:
-                continue
-            if no_truncate:
-                parts.append(txt)
-                continue
-            room = max_chars - total_len
-            if room <= 0:
-                break
-            if len(txt) <= room:
-                parts.append(txt)
-                total_len += len(txt)
-            else:
-                parts.append(txt[:room])
-                total_len += room
-                break
-
-    joined = " ".join(parts) if parts else (center_rec.get("text") or "")
-    return joined if no_truncate else joined[:max_chars]
+from rag.retrieval.utils import (
+    neighbor_ids,
+    load_lookup,
+    passes_filters,
+    stitch_preview,
+)
 
 
 def maybe_counts(s: str):
