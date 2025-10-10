@@ -1,5 +1,5 @@
 # configs/runtime.yaml
-orchestrator: native            # choose between "langchain" or "native"
+orchestrator: langchain            # choose between "langchain" or "native"
 
 embedder:
   adapter: bge_local

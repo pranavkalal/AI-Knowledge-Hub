@@ -6,6 +6,11 @@ Returns the generated answer and normalized source list for the API layer.
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
 from app.services.prompting import SYSTEM, build_user_prompt
+from rag.retrieval.utils import (
+    resolve_retrieval_settings,
+    prepare_hits,
+    build_prompt_entries,
+)
 
 
 class QAPipeline:
@@ -35,17 +40,26 @@ class QAPipeline:
         qv = self.emb.embed_query(q)
 
         # 2) retrieve top-k (be graceful if the store doesn't support extra kwargs)
-        query_kwargs = {"k": k}
+        settings = resolve_retrieval_settings(filters)
+
+        store_filters = {}
+        if settings.year_min is not None:
+            store_filters["year_min"] = settings.year_min
+        if settings.year_max is not None:
+            store_filters["year_max"] = settings.year_max
+
+        overfetch = max(k * 5, 50)
+        query_kwargs = {"k": overfetch}
         if mode is not None:
             query_kwargs["mode"] = mode
-        if filters:
-            query_kwargs["filters"] = filters
+        if store_filters:
+            query_kwargs["filters"] = store_filters
 
         try:
             hits = self.store.query(qv, **query_kwargs)
         except TypeError:
             # Older stores: only accept (vector, k)
-            hits = self.store.query(qv, k=k)
+            hits = self.store.query(qv, k=overfetch)
 
         # 3) optional rerank
         do_rerank = True if rerank is None else bool(rerank)
@@ -57,6 +71,8 @@ class QAPipeline:
                 pass
 
         # 4) format sources and build context lines for the prompt
+        hits = prepare_hits(hits, self.store, settings, limit=k)
+
         if not hits:
             # no retrieval = don't pay LLM tax
             return {
@@ -65,38 +81,38 @@ class QAPipeline:
                 "usage": {"retrieved": 0},
             }
 
-        srcs: List[Dict[str, Any]] = []
-        lines: List[str] = []
-
-        for i, h in enumerate(hits, 1):
-            md = h.get("metadata", {}) if isinstance(h, dict) else {}
-            sid = f"S{i}"
-
-            text = md.get("text") or md.get("chunk") or ""
-            snippet = (text[:240] + "…") if len(text) > 240 else text
-
-            title = md.get("title") or md.get("doc_id") or md.get("id") or "Source"
-            doc_id = md.get("doc_id") or md.get("id") or ""
-            page = md.get("page")
-            page_str = f", p.{page}" if page is not None else ""
-
-            lines.append(f"[{sid}] {title} ({doc_id}{page_str}): {snippet}")
-
-            srcs.append({
-                "sid": sid,
-                "doc_id": doc_id,
-                "title": md.get("title"),
-                "page": page,
-                "url": md.get("url"),
-                "score": h.get("score"),
-                # keep 'snippet' key; API layer maps snippet->span for UI
-                "snippet": snippet,
-            })
+        lines, srcs = build_prompt_entries(hits, snippet_char_limit=settings.max_snippet_chars)
 
         # 5) build prompt messages
         user = build_user_prompt(q, "\n\n".join(lines))
 
         # 6) call LLM
         answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+
+        formatted_sources = []
+        for s in srcs:
+            label = s.get("sid") or ""
+            title = s.get("title") or s.get("doc_id") or "Source"
+            year = s.get("year")
+            page = s.get("page")
+            doc_id = s.get("doc_id")
+            url = s.get("url")
+
+            bits = []
+            if year is not None:
+                bits.append(str(year))
+            if page is not None:
+                bits.append(f"p.{page}")
+            if doc_id:
+                bits.append(doc_id)
+
+            suffix = f" ({', '.join(bits)})" if bits else ""
+            line = f"{label} — {title}{suffix}"
+            if url:
+                line = f"{line} — {url}"
+            formatted_sources.append(line)
+
+        if formatted_sources:
+            answer = f"{answer.strip()}\n\nSources:\n" + "\n".join(f"- {line}" for line in formatted_sources)
 
         return {"answer": answer, "sources": srcs, "usage": usage}

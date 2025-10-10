@@ -2,13 +2,7 @@
 
 > Modular GenAI system that transforms unstructured research reports into searchable, summarised insights — powered by retrieval-augmented generation (RAG), vector search, and flexible LLM orchestration.
 
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)]()
-[![FAISS](https://img.shields.io/badge/vectorstore-FAISS-green.svg)]()
-[![LangChain](https://img.shields.io/badge/orchestrator-LangChain%20|%20Native-orange.svg)]()
-
----
-
-### 📄 Overview
+### Overview
 
 AI-Knowledge-Hub streamlines how organisations access decades of scattered research data.  
 It automates:
@@ -28,7 +22,7 @@ For the detailed architecture report, see [`docs/AI-Knowledge-Hub-Overview.pdf`]
 | Component | Version | Purpose |
 |------------|----------|----------|
 | **Python** | 3.10 + | Core runtime |
-| **Ollama** | 0.1.32 + | Local LLMs  |
+| **Ollama** | 0.1.32 + | Local LLMs (install + model pull) |
 | **pip** | latest | Dependency installer |
 | **FAISS** | via `requirements.txt` | Vector index |
 | **Git** | any recent | Repo management |
@@ -49,14 +43,32 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Verify Ollama
+### 2. Install Ollama (if you haven’t already)
+
+macOS / Linux:
+
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+winget install Ollama.Ollama
+```
+
+Start the Ollama service once so it can finish bootstrapping, then keep it running in the background.
+
+### 3. Pull the Default Model (llama3 by default)
 
 ```bash
 ollama pull llama3
 ollama list
 ```
 
-### 3. Environment Variables
+> Want a different model? Replace `llama3` with any compatible Ollama model name and update `OLLAMA_MODEL` in `.env`.
+
+### 4. Environment Variables
 
 Create .env and then copy contents from .env.example to .env
 

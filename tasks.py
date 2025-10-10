@@ -132,9 +132,19 @@ def build(c):
     faiss(c)
 
 @task
-def query(c, q, k=8, neighbors=2, per_doc=2):
-    """CLI test against FAISS"""
-    _run(f'{PY} -m scripts.query_faiss --q "{q}" --k {k} --neighbors {neighbors} --per-doc {per_doc}')
+def query(c, q, k=8, neighbors=2, per_doc=2, show_titles=True):
+    """CLI test against FAISS (toggle metadata with --show-titles/--no-show-titles)."""
+    title_flag = "--show-titles" if show_titles else "--no-show-titles"
+    cmd = (
+        f'{PY} -m scripts.query_faiss '
+        f'--q "{q}" '
+        f'--k {k} '
+        f'--neighbors {neighbors} '
+        f'--per-doc {per_doc} '
+        f'{title_flag}'
+    )
+    print(f"[query] {cmd}")
+    _run(cmd)
 
 @task
 def api(c, reload=True):

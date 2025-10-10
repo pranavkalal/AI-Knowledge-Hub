@@ -12,6 +12,10 @@ Inputs:
 
 Usage:
   python scripts/query_faiss.py --q "irrigation efficiency 2018" --k 8 --neighbors 1 --per-doc 2 --show-counts
+
+Example:
+  >>> python scripts/query_faiss.py --q "irrigation" --no-show-titles
+  #1 score=0.842 id=DOC_chunk0001
 """
 
 import argparse
@@ -22,87 +26,12 @@ from collections import defaultdict
 # Unified embedding path: same as API
 from app.adapters.embed_bge import BGEEmbeddingAdapter
 from store.store_faiss import FaissFlatIP
-
-
-def neighbor_ids(cid: str, neighbors: int) -> list[str]:
-    """Return list of neighbor chunk ids ±N around cid (expects suffix `_chunkNNNN`)."""
-    if neighbors <= 0:
-        return [cid]
-    base, _, tail = cid.partition("_chunk")
-    try:
-        idx = int(tail)
-    except ValueError:
-        return [cid]
-    ids = []
-    for j in range(idx - neighbors, idx + neighbors + 1):
-        ids.append(f"{base}_chunk{j:04d}")
-    return ids
-
-
-def load_lookup(chunks_path: str, needed_ids: set[str]) -> dict[str, dict]:
-    """Read only the chunk records we actually need into a dict keyed by id."""
-    lookup = {}
-    if not needed_ids:
-        return lookup
-    with open(chunks_path, encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            cid = rec.get("id")
-            if cid in needed_ids:
-                lookup[cid] = rec
-                if len(lookup) == len(needed_ids):
-                    break
-    return lookup
-
-
-def passes_filters(rec, contains_any, year_min, year_max):
-    """Apply keyword and year range filters to a chunk record."""
-    if contains_any:
-        text = (rec.get("text") or "").lower()
-        if not any(kw in text for kw in contains_any):
-            return False
-    y = rec.get("year")
-    if year_min is not None and isinstance(y, int) and y < year_min:
-        return False
-    if year_max is not None and isinstance(y, int) and y > year_max:
-        return False
-    return True
-
-
-def stitch_preview(center_rec, lookup, neighbors=1, max_chars=1800, no_truncate=False) -> str:
-    """
-    Stitch ±neighbors chunks from the same doc to form a readable preview.
-    Honors max_chars unless no_truncate=True.
-    """
-    cid = center_rec.get("id", "")
-    center_doc = center_rec.get("doc_id") or cid.split("_chunk")[0]
-    parts = []
-    total_len = 0
-
-    for nid in neighbor_ids(cid, neighbors):
-        rec = lookup.get(nid)
-        if rec and (rec.get("doc_id") or nid.split("_chunk")[0]) == center_doc:
-            txt = (rec.get("text") or "").replace("\n", " ")
-            if not txt:
-                continue
-            if no_truncate:
-                parts.append(txt)
-                continue
-            room = max_chars - total_len
-            if room <= 0:
-                break
-            if len(txt) <= room:
-                parts.append(txt)
-                total_len += len(txt)
-            else:
-                parts.append(txt[:room])
-                total_len += room
-                break
-
-    joined = " ".join(parts) if parts else (center_rec.get("text") or "")
-    return joined if no_truncate else joined[:max_chars]
+from rag.retrieval.utils import (
+    neighbor_ids,
+    load_lookup,
+    passes_filters,
+    stitch_preview,
+)
 
 
 def maybe_counts(s: str):
@@ -135,6 +64,12 @@ def main():
     ap.add_argument("--no-truncate", action="store_true", help="print full stitched preview (ignore char cap)")
     ap.add_argument("--show-counts", action="store_true", help="print word/char/token counts for previews")
     ap.add_argument("--model", default="BAAI/bge-small-en-v1.5", help="embedding model (kept for parity with API)")
+    ap.add_argument(
+        "--show-titles",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="include title/year/page metadata in pretty output (use --no-show-titles for minimal lines)",
+    )
     args = ap.parse_args()
 
     # 1) Load FAISS index and ids
@@ -213,20 +148,31 @@ def main():
         return
 
     for rank, (score, cid, rec) in enumerate(results, 1):
-        print(f"#{rank} score={score:.3f} id={cid}")
-        print(f"   title: {rec.get('title') or rec.get('doc_id') or '?'}")
-        print(f"   year:  {rec.get('year', '?')}")
         prev = stitch_preview(
             rec, lookup,
             neighbors=args.neighbors,
             max_chars=args.max_preview_chars,
             no_truncate=args.no_truncate
         )
+        if args.show_titles:
+            title = rec.get("title") or rec.get("doc_id") or "?"
+            year = rec.get("year")
+            year_str = str(year) if year is not None else "?"
+            page = rec.get("page")
+            page_str = str(page) if page is not None else "-"
+            snippet = (prev or "").replace("\n", " ").strip()
+            snippet = snippet[:180]
+            print(f"{rank:>2} {score:.3f}  {title} ({year_str})  p{page_str}  {snippet}...")
+        else:
+            print(f"#{rank} score={score:.3f} id={cid}")
         if args.show_counts:
             w, c, t = maybe_counts(prev)
             tok_str = f", tokens~{t}" if t is not None else ""
             print(f"   counts: {w} words, {c} chars{tok_str}")
-        print(f"   text:  {prev}\n")
+        if args.show_titles:
+            print()
+        else:
+            print(f"   text:  {prev}\n")
 
 
 if __name__ == "__main__":
