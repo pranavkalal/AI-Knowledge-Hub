@@ -167,6 +167,9 @@ class PortsRetriever(BaseRetriever):
         """Support LangChain's Runnable interface."""
         return self._get_relevant_documents(input)
 
+    async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
+        return self._get_relevant_documents(input)
+
     # ---------------------------------------------------------------- retrieval
     def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
         question = query["question"] if isinstance(query, dict) else query

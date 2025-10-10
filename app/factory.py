@@ -166,6 +166,7 @@ def build_pipeline(cfg_path: str = None):
                     "answer": out.get("answer", ""),
                     "sources": out.get("citations", []),
                     "usage": out.get("usage"),
+                    "timings": out.get("timings", []),
                 }
 
             async def stream(self, question: str, temperature: float = 0.2, max_tokens: int = 600, **kwargs):

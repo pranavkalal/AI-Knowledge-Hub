@@ -189,8 +189,12 @@ with tabs[0]:
             st.error(f"/ask failed: {exc}")
             st.stop()
 
-        answer = data.get("answer") or "(no answer)"
-        citations = data.get("citations", [])
+        if isinstance(data, dict):
+            answer = data.get("answer") or "(no answer)"
+            citations = data.get("citations", [])
+        else:
+            answer = str(data)
+            citations = []
 
         answer_header.markdown("### Answer")
         answer_body.write(answer)

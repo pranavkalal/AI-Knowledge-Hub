@@ -5,13 +5,18 @@ Wraps your retriever, optional reranker, and LLM into an LCEL graph.
 """
 
 from __future__ import annotations
+
+import asyncio
+import time
+from contextvars import ContextVar
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.documents import Document
-from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
+from langchain_core.runnables import Runnable, RunnableLambda
 
-from rag.langchain_adapters import PortsRetriever, RerankDecoratorRetriever
+from rag.langchain_adapters import PortsRetriever
 from rag.callbacks import LoggingCallbackHandler
 
 
@@ -20,6 +25,39 @@ SYSTEM_PROMPT = (
     "Answer ONLY from the provided source passages. "
     "Include inline citations using [S#] per passage and provide a Sources section."
 )
+
+_TIMELINE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("_rag_chain_timeline", default=None)
+
+
+def _init_timeline(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Reset per-run timing buffer."""
+    _TIMELINE.set([])
+    return payload
+
+
+def _record_timing(stage: str, duration: float) -> None:
+    """Append a timing entry for the current run."""
+    if duration < 0:
+        duration = 0.0
+    timeline = _TIMELINE.get()
+    if timeline is None:
+        timeline = []
+        _TIMELINE.set(timeline)
+    timeline.append({"stage": stage, "seconds": float(duration)})
+
+
+def _consume_timeline() -> List[Dict[str, Any]]:
+    """Return and clear the accumulated timeline."""
+    timeline = _TIMELINE.get()
+    if timeline is None:
+        return []
+    snapshot = [
+        {"stage": str(entry.get("stage")), "seconds": float(entry.get("seconds", 0.0))}
+        for entry in timeline
+        if entry
+    ]
+    _TIMELINE.set(None)
+    return snapshot
 
 
 def _sanitize_contains(value: Any) -> Optional[List[str]]:
@@ -223,15 +261,18 @@ def build_chain(
         except Exception as exc:
             print(f"[warn] Compression retriever unavailable: {exc}")
 
-    if use_rerank and reranker:
-        retriever = RerankDecoratorRetriever(base=retriever, reranker=reranker)
+    retrieval_runner: Runnable = _RetrievalRunnable(
+        retriever=retriever,
+        reranker=reranker if use_rerank and reranker else None,
+    )
 
-    llm_runnable = _call_llm(llm)
+    llm_runnable: Runnable = _TimedRunnable("llm", _call_llm(llm))
 
     chain = (
-        {
-            "question": RunnablePassthrough(),
-            "docs": retriever,
+        RunnableLambda(_init_timeline)
+        | {
+            "question": RunnableLambda(lambda x: x.get("question", "")),
+            "docs": retrieval_runner,
             "temperature": RunnableLambda(lambda x: x.get("temperature", 0.2)),
             "max_tokens": RunnableLambda(lambda x: x.get("max_tokens", 600)),
         }
@@ -240,11 +281,7 @@ def build_chain(
             "llm": llm_runnable,
             "citations": RunnableLambda(lambda x: x["citations"]),
         }
-        | RunnableLambda(lambda out: {
-            "answer": out["llm"]["answer"],
-            "usage": out["llm"].get("usage"),
-            "citations": out["citations"],
-        })
+        | RunnableLambda(_finalize_output)
     )
 
     langchain_cfg = llm_config or {}
@@ -261,3 +298,89 @@ def build_chain(
         chain = chain.with_config(config={"callbacks": callbacks})
 
     return chain
+
+
+class _TimedRunnable(Runnable):
+    """Wrap a runnable to capture its execution duration."""
+
+    def __init__(self, stage: str, inner: Runnable):
+        self.stage = stage
+        self.inner = inner
+
+    def invoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
+        start = time.perf_counter()
+        result = self.inner.invoke(input, config=config, **kwargs)
+        _record_timing(self.stage, time.perf_counter() - start)
+        return result
+
+    async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
+        start = time.perf_counter()
+        try:
+            result = await self.inner.ainvoke(input, config=config, **kwargs)
+        except (AttributeError, NotImplementedError):
+            fn = partial(self.inner.invoke, input, config=config, **kwargs)
+            result = await asyncio.to_thread(fn)
+        _record_timing(self.stage, time.perf_counter() - start)
+        return result
+
+
+class _RetrievalRunnable(Runnable):
+    """Run retrieval (and optional rerank) while recording timings."""
+
+    def __init__(self, retriever: Runnable, reranker: Any | None):
+        self.retriever = _TimedRunnable("retrieval", retriever)
+        self.reranker = reranker
+
+    def _question_text(self, query: Any) -> str:
+        if isinstance(query, dict):
+            return str(query.get("question", "") or "")
+        return str(query or "")
+
+    def _apply_rerank(self, query: Any, docs: List[Document]) -> List[Document]:
+        question = self._question_text(query)
+        hits = []
+        for doc in docs or []:
+            md = dict(getattr(doc, "metadata", {}) or {})
+            text = getattr(doc, "page_content", "")
+            md["text"] = text
+            md.setdefault("preview", text)
+            hits.append({"score": md.get("score"), "metadata": md})
+
+        start = time.perf_counter()
+        try:
+            reranked = self.reranker.rerank(question, hits)
+        except Exception:
+            reranked = hits
+        if not isinstance(reranked, list):
+            reranked = hits
+        _record_timing("rerank", time.perf_counter() - start)
+
+        out_docs: List[Document] = []
+        for hit in reranked:
+            md = dict(hit.get("metadata", {}) or {})
+            text = md.pop("text", "") or md.get("preview", "")
+            md["score"] = hit.get("score")
+            out_docs.append(Document(page_content=text, metadata=md))
+        return out_docs
+
+    def invoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
+        docs = self.retriever.invoke(input, config=config, **kwargs)
+        if self.reranker:
+            docs = self._apply_rerank(input, docs)
+        return docs
+
+    async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
+        docs = await self.retriever.ainvoke(input, config=config, **kwargs)
+        if self.reranker:
+            docs = self._apply_rerank(input, docs)
+        return docs
+
+
+def _finalize_output(out: Dict[str, Any]) -> Dict[str, Any]:
+    llm_out = out.get("llm", {}) if isinstance(out, dict) else {}
+    return {
+        "answer": llm_out.get("answer", ""),
+        "usage": llm_out.get("usage"),
+        "citations": out.get("citations", []),
+        "timings": _consume_timeline(),
+    }

@@ -31,7 +31,7 @@ llm:
 retrieval:
   k: 6
   mode: dense                      # dense | bm25 | hybrid (your store decides)
-  rerank: true
+  rerank: false
   filters:
     year_min: 2019
     year_max: 2025
