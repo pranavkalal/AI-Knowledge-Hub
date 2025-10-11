@@ -11,8 +11,11 @@ class SearchResult(BaseModel):
     title: Optional[str] = None
     year: Optional[int] = None
     preview: str
+    page: Optional[int] = None
     neighbor_window: Optional[List[int]] = None
+    pdf_url: Optional[str] = None
     source_url: Optional[str] = None
+    rel_path: Optional[str] = None
     filename: Optional[str] = None
 
 class SearchResponse(BaseModel):

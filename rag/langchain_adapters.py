@@ -8,6 +8,7 @@ from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.pydantic_v1 import PrivateAttr
 
 from rag.retrieval.utils import neighbor_ids
+from rag.retrieval.pdf_links import enrich_metadata
 
 
 class PortsRetriever(BaseRetriever):
@@ -167,6 +168,9 @@ class PortsRetriever(BaseRetriever):
         """Support LangChain's Runnable interface."""
         return self._get_relevant_documents(input)
 
+    async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
+        return self._get_relevant_documents(input)
+
     # ---------------------------------------------------------------- retrieval
     def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
         question = query["question"] if isinstance(query, dict) else query
@@ -218,6 +222,7 @@ class PortsRetriever(BaseRetriever):
                 "chunk_indices": chunk_indices,
                 "score": score,
             }
+            metadata = enrich_metadata(metadata)
             docs.append(Document(page_content=stitched, metadata=metadata))
 
             if len(docs) >= self.top_k:
@@ -259,5 +264,6 @@ class RerankDecoratorRetriever(BaseRetriever):
             md = dict(h["metadata"])
             text = md.pop("text", "") or md.get("preview", "")
             md["score"] = h.get("score")
+            md = enrich_metadata(md)
             out.append(Document(page_content=text, metadata=md))
         return out
