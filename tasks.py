@@ -203,7 +203,7 @@ def eval_extract(c):
     """Run extraction audit."""
     _run(f'{PY} -m app.extraction_eval')
 
-@task(name="eval.retrieval")
+@task
 def eval_retrieval(c, cfg="configs/runtime.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
     """Evaluate retrieval metrics for native vs LangChain orchestrators."""
     _run(f'{PY} -m scripts.eval_retrieval --cfg {cfg} --q {q} --k {k}')
@@ -234,10 +234,10 @@ def rebuild(c):
 
 ns = Collection.from_module(sys.modules[__name__])
 try:
-    eval_task = ns["eval-retrieval"]
-    del ns["eval-retrieval"]
+    eval_task = ns["eval_retrieval"]
+except KeyError:
+    pass
+else:
     eval_ns = Collection("eval")
     eval_ns.add_task(eval_task, name="retrieval")
     ns.add_collection(eval_ns)
-except KeyError:
-    pass
