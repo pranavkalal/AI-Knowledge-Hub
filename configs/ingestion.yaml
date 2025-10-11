@@ -10,6 +10,8 @@ seed_urls:
   - "https://www.insidecotton.com/categories/2024-final-reports"
   - "https://www.insidecotton.com/categories/2025-final-reports"
   - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023+Final+Reports+%28266358%29"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023%20Final%20Reports%20%28266358%29&page=1"
 
 include_patterns:
   - "\\.pdf($|\\?)"
