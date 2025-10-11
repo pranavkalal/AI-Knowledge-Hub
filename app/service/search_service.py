@@ -73,7 +73,10 @@ def search(
             "title": citation.get("title"),
             "year": citation.get("year"),
             "preview": preview,
-            "source_url": meta.get("url"),
+            "page": citation.get("page"),
+            "pdf_url": citation.get("url") or meta.get("url"),
+            "source_url": citation.get("source_url") or meta.get("source_url"),
+            "rel_path": citation.get("rel_path") or meta.get("rel_path"),
             "filename": meta.get("filename"),
         })
 

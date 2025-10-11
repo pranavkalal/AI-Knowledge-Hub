@@ -4,7 +4,7 @@ Common helpers for formatting snippets and metadata across native, CLI, and Lang
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 def format_snippet(text: str, length: int = 320) -> str:
@@ -59,6 +59,17 @@ def format_metadata(meta: Dict[str, Any]) -> str:
     return f"({', '.join(parts)})"
 
 
+def _coerce_page(value: Any) -> Optional[int]:
+    if isinstance(value, list) and value:
+        value = value[0]
+    if value in (None, "", []):
+        return None
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def format_citation(hit: Dict[str, Any]) -> Dict[str, Any]:
     """
     Create a normalized citation payload for API responses.
@@ -70,12 +81,17 @@ def format_citation(hit: Dict[str, Any]) -> Dict[str, Any]:
         A dictionary with standardised keys: title, year, page, doc_id, score, snippet.
     """
     metadata = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+    page = _coerce_page(metadata.get("page"))
 
     return {
         "title": metadata.get("title"),
         "year": metadata.get("year"),
-        "page": metadata.get("page"),
+        "page": page,
         "doc_id": metadata.get("doc_id"),
         "score": hit.get("score") if isinstance(hit, dict) else None,
         "snippet": metadata.get("preview") or metadata.get("text") or "",
+        "url": metadata.get("url"),
+        "source_url": metadata.get("source_url"),
+        "rel_path": metadata.get("rel_path") or metadata.get("filename"),
+        "filename": metadata.get("filename"),
     }

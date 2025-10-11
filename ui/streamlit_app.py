@@ -106,12 +106,13 @@ def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
     for idx, citation in enumerate(citations, start=1):
         with st.container(border=True):
             title = citation.get("title") or "(untitled)"
-            page = citation.get("page", "—")
+            page = citation.get("page")
             doc_id = citation.get("doc_id", "")
             span = citation.get("span", "")
             score = citation.get("score")
 
-            header = f"**{idx}. {title}** · page {page}"
+            page_label = f"page {page}" if page else "page —"
+            header = f"**{idx}. {title}** · {page_label}"
             if score is not None:
                 header += f" · score {round(score, 3)}"
             st.markdown(header)
@@ -119,7 +120,25 @@ def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
             if span:
                 truncated = span[:1200]
                 st.write(truncated + ("…" if len(span) > len(truncated) else ""))
-            st.caption(f"`doc_id: {doc_id}`")
+            links: list[str] = []
+            pdf_href = citation.get("url")
+            link_label = "Open PDF"
+            if page:
+                link_label += f" (p. {page})"
+            resolved_pdf = pdf_href if isinstance(pdf_href, str) else None
+            if resolved_pdf:
+                resolved_pdf = resolved_pdf if resolved_pdf.startswith("http") else f"{API_ROOT}{resolved_pdf if resolved_pdf.startswith('/') else '/' + resolved_pdf}"
+                links.append(f'<a href="{resolved_pdf}" target="_blank" rel="noopener">{link_label}</a>')
+            source_href = citation.get("source_url")
+            if isinstance(source_href, str) and source_href:
+                links.append(f'<a href="{source_href}" target="_blank" rel="noopener">Source site</a>')
+            rel_path = citation.get("rel_path")
+            footer_parts = [f"`doc_id: {doc_id}`"]
+            if rel_path:
+                footer_parts.append(f"`file: {rel_path}`")
+            if links:
+                st.markdown(" · ".join(links), unsafe_allow_html=True)
+            st.caption(" · ".join(footer_parts))
 
 
 # -------- Ask --------
@@ -279,10 +298,24 @@ with tabs[1]:
                 preview = hit.get("preview") or ""
                 snippet = preview[:1200]
                 st.write(snippet + ("…" if len(preview) > len(snippet) else ""))
+                links: list[str] = []
+                pdf_href = hit.get("pdf_url")
+                if isinstance(pdf_href, str) and pdf_href:
+                    resolved = pdf_href if pdf_href.startswith("http") else f"{API_ROOT}{pdf_href if pdf_href.startswith('/') else '/' + pdf_href}"
+                    page = hit.get("page")
+                    label = "Download PDF"
+                    if page:
+                        label += f" (p. {page})"
+                    links.append(f'<a href="{resolved}" target="_blank" rel="noopener">{label}</a>')
+                source_href = hit.get("source_url")
+                if isinstance(source_href, str) and source_href:
+                    links.append(f'<a href="{source_href}" target="_blank" rel="noopener">Source site</a>')
+                if links:
+                    st.markdown(" · ".join(links), unsafe_allow_html=True)
                 c1, c2, c3 = st.columns(3)
                 c1.caption(f"doc_id: `{hit.get('doc_id', '')}`")
-                c2.caption(f"score: {round(hit.get('score', 0.0), 3)}")
-                c3.caption(f"chunk: `{hit.get('chunk_id', '')}`")
+                c2.caption(f"page: {hit.get('page') or '—'}")
+                c3.caption(f"score: {round(hit.get('score', 0.0), 3)}")
 
             downloadable.append(
                 {
@@ -290,8 +323,11 @@ with tabs[1]:
                     "doc_id": hit.get("doc_id"),
                     "title": hit.get("title"),
                     "year": hit.get("year"),
+                    "page": hit.get("page"),
                     "score": hit.get("score"),
                     "preview": hit.get("preview"),
+                    "pdf_url": hit.get("pdf_url"),
+                    "source_url": hit.get("source_url"),
                 }
             )
 

@@ -48,6 +48,9 @@ class Citation(BaseModel):
     score: Optional[float] = None   # original retrieval score
     cosine: Optional[float] = None  # alias (when vectors are L2-normalized)
     url: Optional[str] = None
+    source_url: Optional[str] = None
+    rel_path: Optional[str] = None
+    filename: Optional[str] = None
 
 class AskResponse(BaseModel):
     answer: str
@@ -90,8 +93,20 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
     answer = out.get("answer") or ""
     raw_sources = out.get("sources") or []
 
+    def _coerce_page(value):
+        if isinstance(value, list) and value:
+            value = value[0]
+        if value in (None, "", []):
+            return None
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return None
+
     citations: List[Citation] = []
     for s in raw_sources:
+        page_val = _coerce_page(s.get("page"))
+        rel_path = s.get("rel_path") or s.get("filename")
         citations.append(
             Citation(
                 sid=s.get("sid"),
@@ -99,8 +114,11 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 title=s.get("title"),
                 name=s.get("name"),
                 year=s.get("year"),
-                page=s.get("page"),
+                page=page_val,
                 url=s.get("url"),
+                source_url=s.get("source_url"),
+                rel_path=rel_path,
+                filename=s.get("filename") or rel_path,
                 score=s.get("score"),
                 cosine=s.get("cosine", s.get("score")),
                 span=s.get("snippet") or s.get("span") or s.get("preview"),

@@ -60,6 +60,17 @@ def _consume_timeline() -> List[Dict[str, Any]]:
     return snapshot
 
 
+def _normalize_page(value: Any) -> Optional[int]:
+    if isinstance(value, list) and value:
+        value = value[0]
+    if value in (None, "", []):
+        return None
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def _sanitize_contains(value: Any) -> Optional[List[str]]:
     if value is None:
         return None
@@ -99,7 +110,7 @@ def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         title = meta.get("title") or meta.get("doc_id") or "Source"
         doc_id = meta.get("doc_id") or ""
         year = meta.get("year")
-        page = meta.get("page")
+        page = _normalize_page(meta.get("page"))
 
         parts: List[str] = []
         if doc_id:
@@ -122,6 +133,10 @@ def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
                 "score": meta.get("score"),
                 "chunk_indices": meta.get("chunk_indices"),
                 "snippet": text,
+                "url": meta.get("url"),
+                "rel_path": meta.get("rel_path") or meta.get("filename"),
+                "source_url": meta.get("source_url"),
+                "filename": meta.get("filename"),
             }
         )
 
@@ -364,13 +379,15 @@ class _RetrievalRunnable(Runnable):
         return out_docs
 
     def invoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
-        docs = self.retriever.invoke(input, config=config, **kwargs)
+        query_text = self._question_text(input)
+        docs = self.retriever.invoke(query_text, config=config, **kwargs)
         if self.reranker:
             docs = self._apply_rerank(input, docs)
         return docs
 
     async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
-        docs = await self.retriever.ainvoke(input, config=config, **kwargs)
+        query_text = self._question_text(input)
+        docs = await self.retriever.ainvoke(query_text, config=config, **kwargs)
         if self.reranker:
             docs = self._apply_rerank(input, docs)
         return docs

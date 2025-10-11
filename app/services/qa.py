@@ -94,10 +94,12 @@ class QAPipeline:
             lines.append(line)
 
             citation = format_citation(hit)
-            citation.update({
-                "sid": sid,
-                "url": md.get("url"),
-            })
+            citation["sid"] = sid
+            citation.setdefault("url", md.get("url"))
+            citation.setdefault("source_url", md.get("source_url"))
+            rel_path = md.get("rel_path") or md.get("filename")
+            if rel_path:
+                citation.setdefault("rel_path", rel_path)
             citations.append(citation)
 
         user = build_user_prompt(q, "\n\n".join(lines))
