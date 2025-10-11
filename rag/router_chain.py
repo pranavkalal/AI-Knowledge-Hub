@@ -42,8 +42,8 @@ def build_router_chain(
         question = inputs.get("question", "")
         answer, usage = llm.chat(
             "You summarise cotton R&D concepts succinctly.",
-            f"Provide a brief definition or overview for the following request:
-{question}",
+            f"""Provide a brief definition or overview for the following request:
+{question}""",
             float(inputs.get("temperature", 0.2)),
             int(inputs.get("max_tokens", 400)),
         )
