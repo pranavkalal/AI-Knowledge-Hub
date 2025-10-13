@@ -17,21 +17,31 @@ vector_store:
   path: data/embeddings/vectors.faiss
   ids:  data/embeddings/ids.npy
   meta: data/staging/chunks.jsonl
+  factory: IVF4096               # Optional FAISS factory string (e.g. IVF4096,Flat)
 
 reranker:
   adapter: bge_reranker            # or "none"
   model: BAAI/bge-reranker-base
+  topn: 20                         # number of candidates to rerank per query
+  batch_size: 16                   # cross-encoder batch size
+  max_length: 256                  # token max length for reranker inputs
+  device: null                     # e.g. "cuda", "cpu", or null for auto
 
 llm:
   adapter: ollama                  # set to "openai" if you like invoices
   model: llama3.1:8b      # must match what you `ollama pull`
   temperature: 0.2
-  max_output_tokens: 800
+  max_output_tokens: 1500
 
 retrieval:
-  k: 6
+  k: 8
   mode: dense                      # dense | bm25 | hybrid (your store decides)
   rerank: false
+  max_preview_chars: 4400          # stitching window for previews
+  max_snippet_chars: 2600          # prompt snippet length
+  neighbors: 2                     # stitched neighbours on each side (FAISS + LC)
+  per_doc: 1                       # max results per document (set 0 to disable)
+  diversify_per_doc: true          # enforce per-doc diversification in LangChain
   filters:
     year_min: 2019
     year_max: 2025
@@ -42,4 +52,4 @@ retrieval:
 
 langchain:
   trace: true
-  stream: true
+  stream: false

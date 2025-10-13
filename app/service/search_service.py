@@ -10,7 +10,7 @@ from app.adapters.vector_faiss import FaissStoreAdapter
 from app.services.formatting import format_citation, format_snippet
 from rag.retrieval.utils import resolve_retrieval_settings, prepare_hits
 
-DEFAULTS = dict(k=8, neighbors=2, per_doc=2, max_preview_chars=1800, max_snippet_chars=180)
+DEFAULTS = dict(k=8, neighbors=1, per_doc=1, max_preview_chars=2400, max_snippet_chars=1600)
 ROOT = Path(__file__).resolve().parents[2]   # project root
 
 
@@ -39,6 +39,8 @@ def search(
     settings_filters: Dict[str, Any] = dict(filters or {})
     settings_filters.setdefault("neighbors", neighbors)
     settings_filters.setdefault("per_doc", DEFAULTS["per_doc"])
+    if "diversify_per_doc" not in settings_filters:
+        settings_filters["diversify_per_doc"] = (settings_filters.get("per_doc", DEFAULTS["per_doc"]) or 0) > 0
     settings_filters.setdefault("max_preview_chars", DEFAULTS["max_preview_chars"])
     settings_filters.setdefault("max_snippet_chars", DEFAULTS["max_snippet_chars"])
 
@@ -70,6 +72,9 @@ def search(
             "doc_id": doc_id,
             "chunk_id": int(chunk_index or 0),
             "score": citation.get("score", 0.0),
+            "faiss_score": citation.get("faiss_score"),
+            "rerank_score": citation.get("rerank_score"),
+            "cosine": citation.get("cosine"),
             "title": citation.get("title"),
             "year": citation.get("year"),
             "preview": preview,
@@ -104,6 +109,7 @@ def search_service(
         "per_doc": per_doc,
         "max_preview_chars": DEFAULTS["max_preview_chars"],
         "max_snippet_chars": DEFAULTS["max_snippet_chars"],
+        "diversify_per_doc": per_doc > 0,
     }
 
     results = search(q, top_k=k, neighbors=neighbors, filters=filters)

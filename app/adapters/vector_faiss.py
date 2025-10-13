@@ -71,7 +71,13 @@ class FaissStoreAdapter(VectorStorePort):
                 continue
             chunk_id = self.ids[idx]
             md = meta.get(chunk_id, {})
-            hits.append({"id": chunk_id, "score": float(score), "metadata": md})
+            score_float = float(score)
+            hits.append({
+                "id": chunk_id,
+                "score": score_float,
+                "faiss_score": score_float,
+                "metadata": md,
+            })
         return hits
 
     def search_raw(self, query: str, top_k: int = 10) -> List[Dict]:

@@ -3,6 +3,7 @@ End-to-end QA pipeline: embed query -> retrieve -> (optional) rerank -> build pr
 Returns the generated answer and normalized source list for the API layer.
 """
 
+from time import perf_counter
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
 from app.services.prompting import SYSTEM, build_user_prompt
@@ -37,6 +38,7 @@ class QAPipeline:
             return {"answer": "", "sources": [], "usage": {"error": "empty_question"}}
 
         # 1) embed query
+        total_start = perf_counter()
         qv = self.emb.embed_query(q)
 
         # 2) retrieve top-k (be graceful if the store doesn't support extra kwargs)
@@ -48,30 +50,51 @@ class QAPipeline:
         if settings.year_max is not None:
             store_filters["year_max"] = settings.year_max
 
-        overfetch = max(k * 5, 50)
+        rerank_topn = None
+        if hasattr(self.rerank, "topn"):
+            try:
+                rerank_topn = int(getattr(self.rerank, "topn"))
+            except (TypeError, ValueError):
+                rerank_topn = None
+        candidate_limit = k
+        if rerank_topn:
+            candidate_limit = max(candidate_limit, rerank_topn)
+
+        overfetch = max(candidate_limit * 5, 50)
         query_kwargs = {"k": overfetch}
         if mode is not None:
             query_kwargs["mode"] = mode
         if store_filters:
             query_kwargs["filters"] = store_filters
 
+        ann_start = perf_counter()
         try:
             hits = self.store.query(qv, **query_kwargs)
         except TypeError:
             # Older stores: only accept (vector, k)
             hits = self.store.query(qv, k=overfetch)
+        ann_ms = (perf_counter() - ann_start) * 1000.0
 
-        # 3) optional rerank
+        # 4) stitch metadata before reranking
+        stitch_start = perf_counter()
+        stitched_hits = prepare_hits(hits, self.store, settings, limit=candidate_limit)
+        stitch_ms = (perf_counter() - stitch_start) * 1000.0
+
+        # 5) optional rerank
         do_rerank = True if rerank is None else bool(rerank)
+        rerank_ms = 0.0
+        final_hits = stitched_hits
         if do_rerank:
             try:
-                hits = self.rerank.rerank(q, hits)
+                rerank_start = perf_counter()
+                final_hits = self.rerank.rerank(q, stitched_hits)
+                rerank_ms = getattr(self.rerank, "last_run_ms", (perf_counter() - rerank_start) * 1000.0)
             except Exception:
                 # If reranker explodes, limp along with the original ranking
-                pass
-
-        # 4) format sources and build context lines for the prompt
-        hits = prepare_hits(hits, self.store, settings, limit=k)
+                final_hits = stitched_hits
+        
+        # 6) limit to requested k after rerank
+        hits = final_hits[:k]
 
         if not hits:
             # no retrieval = don't pay LLM tax
@@ -104,6 +127,13 @@ class QAPipeline:
 
         user = build_user_prompt(q, "\n\n".join(lines))
         answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+
+        total_ms = (perf_counter() - total_start) * 1000.0
+        rerank_batches = getattr(self.rerank, "last_batches", 0) if do_rerank else 0
+        print(
+            f"[qa.timing] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
+            f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
+        )
 
         if citations:
             formatted_sources = []

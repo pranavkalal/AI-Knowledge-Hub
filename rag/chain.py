@@ -105,7 +105,16 @@ def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         sid = f"S{idx}"
         meta = doc.metadata or {}
         text = doc.page_content or ""
-        snippet = text[:500] + ("…" if len(text) > 500 else "")
+        max_snippet = meta.get("max_snippet_chars")
+        try:
+            max_snippet = int(max_snippet) if max_snippet is not None else None
+        except (TypeError, ValueError):
+            max_snippet = None
+        if max_snippet is None or max_snippet <= 0:
+            max_snippet = 1400
+        snippet = text
+        if len(snippet) > max_snippet:
+            snippet = snippet[:max_snippet] + "…"
 
         title = meta.get("title") or meta.get("doc_id") or "Source"
         doc_id = meta.get("doc_id") or ""
@@ -131,8 +140,11 @@ def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
                 "year": year,
                 "page": page,
                 "score": meta.get("score"),
+                "faiss_score": meta.get("faiss_score"),
+                "rerank_score": meta.get("rerank_score"),
                 "chunk_indices": meta.get("chunk_indices"),
-                "snippet": text,
+                "cosine": meta.get("faiss_score"),
+                "snippet": snippet,
                 "url": meta.get("url"),
                 "rel_path": meta.get("rel_path") or meta.get("filename"),
                 "source_url": meta.get("source_url"),
@@ -222,14 +234,24 @@ def build_chain(
     else:
         diversify_flag = bool(diversify_flag)
 
-    retriever: Runnable = PortsRetriever(
+    rerank_topn = None
+    if use_rerank and reranker and hasattr(reranker, "topn"):
+        try:
+            rerank_topn = int(getattr(reranker, "topn"))
+        except (TypeError, ValueError):
+            rerank_topn = None
+
+    effective_top_k = max(k, rerank_topn) if rerank_topn else k
+
+    base_retriever_obj = PortsRetriever(
         store=store,
-        top_k=k,
+        top_k=effective_top_k,
         neighbors=neighbors,
         contains=contains,
         year_range=year_range,
         diversify_per_doc=diversify_flag,
     )
+    retriever: Runnable = base_retriever_obj
 
     if use_multiquery:
         try:
@@ -279,6 +301,8 @@ def build_chain(
     retrieval_runner: Runnable = _RetrievalRunnable(
         retriever=retriever,
         reranker=reranker if use_rerank and reranker else None,
+        base_retriever=base_retriever_obj,
+        default_k=k,
     )
 
     llm_runnable: Runnable = _TimedRunnable("llm", _call_llm(llm))
@@ -342,9 +366,12 @@ class _TimedRunnable(Runnable):
 class _RetrievalRunnable(Runnable):
     """Run retrieval (and optional rerank) while recording timings."""
 
-    def __init__(self, retriever: Runnable, reranker: Any | None):
+    def __init__(self, retriever: Runnable, reranker: Any | None, *, base_retriever: Any, default_k: int):
         self.retriever = _TimedRunnable("retrieval", retriever)
         self.reranker = reranker
+        self._base_retriever = base_retriever
+        self._default_k = max(1, int(default_k))
+        self._last_summary: Dict[str, float] | None = None
 
     def _question_text(self, query: Any) -> str:
         if isinstance(query, dict):
@@ -359,7 +386,16 @@ class _RetrievalRunnable(Runnable):
             text = getattr(doc, "page_content", "")
             md["text"] = text
             md.setdefault("preview", text)
-            hits.append({"score": md.get("score"), "metadata": md})
+            base_score = md.get("score")
+            faiss_score = md.get("faiss_score", base_score)
+            rerank_score = md.get("rerank_score")
+            hit_payload = {
+                "score": base_score,
+                "faiss_score": faiss_score,
+                "rerank_score": rerank_score,
+                "metadata": md,
+            }
+            hits.append(hit_payload)
 
         start = time.perf_counter()
         try:
@@ -368,28 +404,88 @@ class _RetrievalRunnable(Runnable):
             reranked = hits
         if not isinstance(reranked, list):
             reranked = hits
-        _record_timing("rerank", time.perf_counter() - start)
+        rerank_elapsed = getattr(self.reranker, "last_run_ms", (time.perf_counter() - start) * 1000.0) / 1000.0
+        _record_timing("rerank", rerank_elapsed)
 
         out_docs: List[Document] = []
         for hit in reranked:
             md = dict(hit.get("metadata", {}) or {})
             text = md.pop("text", "") or md.get("preview", "")
-            md["score"] = hit.get("score")
+            faiss_score = hit.get("faiss_score", md.get("faiss_score"))
+            rerank_score = hit.get("rerank_score")
+            if faiss_score is not None:
+                md["faiss_score"] = faiss_score
+            if rerank_score is not None:
+                md["rerank_score"] = rerank_score
+                md["score"] = rerank_score
+            else:
+                md["score"] = hit.get("score")
             out_docs.append(Document(page_content=text, metadata=md))
         return out_docs
 
+    def _should_rerank(self, query: Any) -> bool:
+        if self.reranker is None:
+            return False
+        if isinstance(query, dict) and query.get("rerank") is not None:
+            return bool(query["rerank"])
+        return True
+
     def invoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
-        query_text = self._question_text(input)
-        docs = self.retriever.invoke(query_text, config=config, **kwargs)
-        if self.reranker:
+        docs = self.retriever.invoke(input, config=config, **kwargs)
+        timing = getattr(self._base_retriever, "_last_timing", {})
+        rerank_ms = 0.0
+        rerank_batches = 0
+        if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
+            rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
+            rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
+        docs = docs[: self._default_k]
+        ann_ms = timing.get("ann_ms", 0.0)
+        stitch_ms = timing.get("stitch_ms", 0.0)
+        total_ms = timing.get("total_ms")
+        if total_ms is None:
+            total_ms = ann_ms + stitch_ms + rerank_ms
+        summary = {
+            "ann_ms": ann_ms,
+            "stitch_ms": stitch_ms,
+            "rerank_ms": rerank_ms,
+            "total_ms": total_ms,
+            "rerank_batches": rerank_batches,
+        }
+        self._last_summary = summary
+        print(
+            f"[lc.qa] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
+            f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
+        )
         return docs
 
     async def ainvoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
-        query_text = self._question_text(input)
-        docs = await self.retriever.ainvoke(query_text, config=config, **kwargs)
-        if self.reranker:
+        docs = await self.retriever.ainvoke(input, config=config, **kwargs)
+        timing = getattr(self._base_retriever, "_last_timing", {})
+        rerank_ms = 0.0
+        rerank_batches = 0
+        if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
+            rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
+            rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
+        docs = docs[: self._default_k]
+        ann_ms = timing.get("ann_ms", 0.0)
+        stitch_ms = timing.get("stitch_ms", 0.0)
+        total_ms = timing.get("total_ms")
+        if total_ms is None:
+            total_ms = ann_ms + stitch_ms + rerank_ms
+        summary = {
+            "ann_ms": ann_ms,
+            "stitch_ms": stitch_ms,
+            "rerank_ms": rerank_ms,
+            "total_ms": total_ms,
+            "rerank_batches": rerank_batches,
+        }
+        self._last_summary = summary
+        print(
+            f"[lc.qa] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
+            f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
+        )
         return docs
 
 

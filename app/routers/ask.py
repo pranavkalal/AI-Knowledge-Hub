@@ -24,6 +24,9 @@ class AskFilters(BaseModel):
     contains: Optional[str] = None
     neighbors: Optional[int] = None
     per_doc: Optional[int] = None
+    max_preview_chars: Optional[int] = None
+    max_snippet_chars: Optional[int] = None
+    diversify_per_doc: Optional[bool] = None
 
 class AskRequest(BaseModel):
     # Accept BOTH "question" and "query" in the payload; standardize on "question"
@@ -47,6 +50,8 @@ class Citation(BaseModel):
     span: Optional[str] = None      # mapped from pipeline "snippet"
     score: Optional[float] = None   # original retrieval score
     cosine: Optional[float] = None  # alias (when vectors are L2-normalized)
+    faiss_score: Optional[float] = None
+    rerank_score: Optional[float] = None
     url: Optional[str] = None
     source_url: Optional[str] = None
     rel_path: Optional[str] = None
@@ -120,7 +125,9 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 rel_path=rel_path,
                 filename=s.get("filename") or rel_path,
                 score=s.get("score"),
-                cosine=s.get("cosine", s.get("score")),
+                faiss_score=s.get("faiss_score"),
+                rerank_score=s.get("rerank_score"),
+                cosine=s.get("cosine") or s.get("faiss_score") or s.get("score"),
                 span=s.get("snippet") or s.get("span") or s.get("preview"),
             )
         )

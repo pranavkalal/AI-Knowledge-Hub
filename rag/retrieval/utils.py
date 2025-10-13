@@ -137,6 +137,7 @@ class RetrievalSettings:
     per_doc: int
     max_preview_chars: int
     max_snippet_chars: int
+    diversify_per_doc: bool
 
 
 def resolve_retrieval_settings(filters: Optional[Dict[str, Any]]) -> RetrievalSettings:
@@ -173,9 +174,15 @@ def resolve_retrieval_settings(filters: Optional[Dict[str, Any]]) -> RetrievalSe
     year_min = _to_int(filters.get("year_min"))
     year_max = _to_int(filters.get("year_max"))
     neighbors = _to_int(filters.get("neighbors"), default=1, minimum=0)
-    per_doc = _to_int(filters.get("per_doc"), default=2, minimum=1)
-    max_preview_chars = _to_int(filters.get("max_preview_chars"), default=1800, minimum=100) or 1800
-    max_snippet_chars = _to_int(filters.get("max_snippet_chars"), default=500, minimum=120) or 500
+    per_doc = _to_int(filters.get("per_doc"), default=1, minimum=0)
+    diversify = filters.get("diversify_per_doc", True)
+    if isinstance(diversify, str):
+        diversify = diversify.lower() not in {"false", "0", "no"}
+    diversify = bool(diversify)
+    if per_doc == 0:
+        diversify = False
+    max_preview_chars = _to_int(filters.get("max_preview_chars"), default=2400, minimum=100) or 2400
+    max_snippet_chars = _to_int(filters.get("max_snippet_chars"), default=1600, minimum=120) or 1600
 
     return RetrievalSettings(
         contains=unique_contains,
@@ -183,6 +190,7 @@ def resolve_retrieval_settings(filters: Optional[Dict[str, Any]]) -> RetrievalSe
         year_max=year_max,
         neighbors=neighbors,
         per_doc=per_doc,
+        diversify_per_doc=diversify,
         max_preview_chars=max_preview_chars,
         max_snippet_chars=max_snippet_chars,
     )
@@ -243,7 +251,7 @@ def prepare_hits(
         if not passes_filters(meta, settings.contains, settings.year_min, settings.year_max):
             continue
 
-        if settings.per_doc > 0 and per_doc_counts[doc_id] >= settings.per_doc:
+        if settings.diversify_per_doc and settings.per_doc > 0 and per_doc_counts[doc_id] >= settings.per_doc:
             continue
 
         preview_lookup = lookup if lookup else {chunk_id: meta}
@@ -255,13 +263,30 @@ def prepare_hits(
         )
         meta["preview"] = preview
         meta.setdefault("text", preview)
+        meta["max_snippet_chars"] = settings.max_snippet_chars
 
         score = hit.get("score")
         score_float = float(score) if score is not None else 0.0
-        meta["score"] = score_float
+        faiss_score_val = hit.get("faiss_score")
+        faiss_score = float(faiss_score_val) if faiss_score_val is not None else score_float
+        rerank_score_val = hit.get("rerank_score")
+        rerank_score = float(rerank_score_val) if rerank_score_val is not None else None
 
-        processed.append({"id": chunk_id, "score": score_float, "metadata": meta})
-        per_doc_counts[doc_id] += 1
+        meta["score"] = score_float
+        meta["faiss_score"] = faiss_score
+        if rerank_score is not None:
+            meta["rerank_score"] = rerank_score
+
+        processed.append({
+            "id": chunk_id,
+            "score": score_float,
+            "faiss_score": faiss_score,
+            "rerank_score": rerank_score,
+            "cosine": faiss_score,
+            "metadata": meta,
+        })
+        if settings.diversify_per_doc and settings.per_doc > 0:
+            per_doc_counts[doc_id] += 1
 
         if limit is not None and len(processed) >= limit:
             break
@@ -313,7 +338,9 @@ def build_prompt_entries(
                 "page": page,
                 "url": md.get("url"),
                 "score": hit.get("score"),
-                "cosine": hit.get("score"),
+                "faiss_score": hit.get("faiss_score"),
+                "rerank_score": hit.get("rerank_score"),
+                "cosine": hit.get("faiss_score"),
                 "snippet": snippet_text,
             }
         )

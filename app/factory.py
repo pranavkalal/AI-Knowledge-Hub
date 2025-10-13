@@ -88,7 +88,17 @@ def build_pipeline(cfg_path: str = None):
     rr_adapter = (rr_cfg.get("adapter") or "none").lower()
     if rr_adapter in ("bge_reranker", "bge-reranker", "bge"):
         rr_model = rr_cfg.get("model", "BAAI/bge-reranker-base")
-        reranker = BGERerankerAdapter(model_name=rr_model)
+        rr_topn = rr_cfg.get("topn")
+        rr_batch = rr_cfg.get("batch_size")
+        rr_max_len = rr_cfg.get("max_length")
+        rr_device = rr_cfg.get("device")
+        reranker = BGERerankerAdapter(
+            model_name=rr_model,
+            topn=int(rr_topn) if rr_topn is not None else 50,
+            batch_size=int(rr_batch) if rr_batch is not None else 16,
+            max_length=int(rr_max_len) if rr_max_len is not None else 256,
+            device=rr_device,
+        )
     else:
         reranker = NoopReranker()
 
@@ -129,6 +139,16 @@ def build_pipeline(cfg_path: str = None):
         k = int(r_cfg.get("k", 6))
         mode = r_cfg.get("mode", "dense")
         filters = r_cfg.get("filters", {}) or {}
+        if "max_preview_chars" not in filters and r_cfg.get("max_preview_chars") is not None:
+            filters["max_preview_chars"] = r_cfg.get("max_preview_chars")
+        if "max_snippet_chars" not in filters and r_cfg.get("max_snippet_chars") is not None:
+            filters["max_snippet_chars"] = r_cfg.get("max_snippet_chars")
+        if "neighbors" not in filters and r_cfg.get("neighbors") is not None:
+            filters["neighbors"] = r_cfg.get("neighbors")
+        if "per_doc" not in filters and r_cfg.get("per_doc") is not None:
+            filters["per_doc"] = r_cfg.get("per_doc")
+        if "diversify_per_doc" not in filters and r_cfg.get("diversify_per_doc") is not None:
+            filters["diversify_per_doc"] = r_cfg.get("diversify_per_doc")
         use_rerank = bool(r_cfg.get("rerank", True))
         use_multiquery = bool(r_cfg.get("use_multiquery", False))
         use_compression = bool(r_cfg.get("use_compression", False))
@@ -155,12 +175,58 @@ def build_pipeline(cfg_path: str = None):
                 self.chain = chain
                 self.stream_enabled = stream_enabled
 
-            def ask(self, question: str, k: int = 6, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
-                payload = {
+            @staticmethod
+            def _coerce_filters(value: Any) -> Any:
+                if value is None:
+                    return None
+                if hasattr(value, "model_dump"):
+                    try:
+                        return value.model_dump(exclude_none=True)
+                    except Exception:
+                        return value.model_dump()
+                return value
+
+            def _build_payload(
+                self,
+                question: str,
+                temperature: float,
+                max_tokens: int,
+                extra: Dict[str, Any],
+            ) -> Dict[str, Any]:
+                payload: Dict[str, Any] = {
                     "question": question,
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                 }
+                numeric_keys = {"k", "neighbors", "per_doc", "max_tokens", "max_preview_chars", "max_snippet_chars"}
+                for key, raw_value in extra.items():
+                    if raw_value is None:
+                        continue
+                    value = self._coerce_filters(raw_value) if key == "filters" else raw_value
+                    if key in numeric_keys:
+                        try:
+                            value = int(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if key == "k":
+                            value = max(1, value)
+                        elif key == "neighbors":
+                            value = max(0, value)
+                        elif key == "per_doc":
+                            value = max(1, value)
+                        elif key == "max_tokens":
+                            value = max(1, value)
+                        elif key == "max_preview_chars":
+                            value = max(100, value)
+                        elif key == "max_snippet_chars":
+                            value = max(100, value)
+                    payload[key] = value
+                return payload
+
+            def ask(self, question: str, k: int = 6, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
+                extras = dict(kwargs)
+                extras["k"] = k
+                payload = self._build_payload(question, temperature, max_tokens, extras)
                 out = self.chain.invoke(payload)
                 return {
                     "answer": out.get("answer", ""),
@@ -172,11 +238,7 @@ def build_pipeline(cfg_path: str = None):
             async def stream(self, question: str, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
                 if not self.stream_enabled:
                     raise RuntimeError("Streaming not enabled")
-                payload = {
-                    "question": question,
-                    "temperature": float(temperature),
-                    "max_tokens": int(max_tokens),
-                }
+                payload = self._build_payload(question, temperature, max_tokens, dict(kwargs))
                 async for event in self.chain.astream_events(payload, version="v1"):
                     evt_type = event.get("event")
                     data = event.get("data") or {}

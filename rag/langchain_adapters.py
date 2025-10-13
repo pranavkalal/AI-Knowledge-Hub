@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
@@ -7,7 +8,7 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.pydantic_v1 import PrivateAttr
 
-from rag.retrieval.utils import neighbor_ids
+from rag.retrieval.utils import prepare_hits, resolve_retrieval_settings
 from rag.retrieval.pdf_links import enrich_metadata
 
 
@@ -28,6 +29,7 @@ class PortsRetriever(BaseRetriever):
     _store: Any = PrivateAttr()
     _contains: List[str] = PrivateAttr(default_factory=list)
     _year_range: Optional[Tuple[int, int]] = PrivateAttr(default=None)
+    _base_filters: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
     def __init__(
         self,
@@ -76,93 +78,71 @@ class PortsRetriever(BaseRetriever):
                 year_bounds = (ymin, ymax)
         self._year_range = year_bounds
 
+        base_filters: Dict[str, Any] = {}
+        if self._contains:
+            base_filters["contains"] = list(self._contains)
+        if self._year_range:
+            ymin, ymax = self._year_range
+            if ymin is not None:
+                base_filters["year_min"] = ymin
+            if ymax is not None:
+                base_filters["year_max"] = ymax
+        base_filters["neighbors"] = self.neighbors
+        base_filters["per_doc"] = 1 if self.diversify_per_doc else 0
+        base_filters["diversify_per_doc"] = bool(self.diversify_per_doc)
+        object.__setattr__(self, "_base_filters", base_filters)
+
     # ------------------------------------------------------------------ helpers
-    def _meta_map(self) -> Dict[str, Dict]:
-        if hasattr(self._store, "get_meta_map"):
+    @staticmethod
+    def _coerce_payload(query: Any) -> Dict[str, Any]:
+        if isinstance(query, dict):
+            return query
+        return {"question": query}
+
+    def _merge_filters(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        filters: Dict[str, Any] = dict(self._base_filters)
+
+        raw_filters = payload.get("filters")
+        if hasattr(raw_filters, "model_dump"):
             try:
-                return dict(self._store.get_meta_map())
+                raw_filters = raw_filters.model_dump(exclude_none=True)
             except Exception:
-                return {}
-        return {}
+                raw_filters = raw_filters.model_dump()
+        if isinstance(raw_filters, dict):
+            for key, value in raw_filters.items():
+                if value is None or value == "":
+                    continue
+                filters[key] = value
 
-    def _fetch_meta(self, chunk_id: str, cache: Dict[str, Dict]) -> Optional[Dict]:
-        rec = cache.get(chunk_id)
-        if rec is None and hasattr(self._store, "get_metadata"):
+        for key in (
+            "contains",
+            "year_min",
+            "year_max",
+            "neighbors",
+            "per_doc",
+            "max_preview_chars",
+            "max_snippet_chars",
+            "diversify_per_doc",
+        ):
+            value = payload.get(key)
+            if value is None or value == "":
+                continue
+            filters[key] = value
+
+        filters.setdefault("max_preview_chars", 2400)
+        filters.setdefault("max_snippet_chars", 1400)
+
+        return filters
+
+    def _resolve_top_k(self, payload: Dict[str, Any]) -> int:
+        top_k = self.top_k
+        raw = payload.get("k")
+        if raw is not None:
             try:
-                rec = self._store.get_metadata(chunk_id)
-            except Exception:
-                rec = None
-            if rec:
-                cache[chunk_id] = rec
-        return rec
-
-    def _within_year_range(self, year_val: Any) -> bool:
-        if self._year_range is None:
-            return True
-        ymin, ymax = self._year_range
-        try:
-            year_int = int(year_val)
-        except (TypeError, ValueError):
-            return False
-        if ymin is not None and year_int < ymin:
-            return False
-        if ymax is not None and year_int > ymax:
-            return False
-        return True
-
-    def _contains_match(self, text: str) -> bool:
-        if not self._contains:
-            return True
-        source = (text or "").lower()
-        return any(kw in source for kw in self._contains)
-
-    def _stitch(
-        self,
-        center_id: str,
-        doc_id: str,
-        cache: Dict[str, Dict],
-    ) -> Tuple[str, List[int], Optional[Any]]:
-        chunk_indices: set[int] = set()
-        parts: List[str] = []
-        pages: set[Any] = set()
-
-        for nid in neighbor_ids(center_id, self.neighbors):
-            rec = self._fetch_meta(nid, cache)
-            if rec is None:
-                continue
-            n_doc = rec.get("doc_id") or nid.split("_chunk")[0]
-            if n_doc != doc_id:
-                continue
-
-            content = rec.get("text") or rec.get("preview") or ""
-            if content:
-                parts.append(content.strip())
-
-            idx = rec.get("chunk_index")
-            if idx is None:
-                tail = nid.split("_chunk")[-1]
-                try:
-                    idx = int(tail)
-                except (TypeError, ValueError):
-                    idx = None
-            if idx is not None:
-                chunk_indices.add(int(idx))
-
-            page = rec.get("page")
-            if page not in (None, ""):
-                pages.add(page)
-
-        stitched = "\n\n".join(parts).strip()
-        sorted_indices = sorted(chunk_indices)
-
-        if not pages:
-            page_value: Optional[Any] = None
-        elif len(pages) == 1:
-            page_value = next(iter(pages))
-        else:
-            page_value = sorted(pages)
-
-        return stitched, sorted_indices, page_value
+                top_k = max(1, int(raw))
+            except (TypeError, ValueError):
+                pass
+        return top_k
 
     def invoke(self, input: Any, config: Optional[Dict[str, Any]] = None, **kwargs) -> List[Document]:
         """Support LangChain's Runnable interface."""
@@ -173,60 +153,44 @@ class PortsRetriever(BaseRetriever):
 
     # ---------------------------------------------------------------- retrieval
     def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
-        question = query["question"] if isinstance(query, dict) else query
+        payload = self._coerce_payload(query)
+        question = str(payload.get("question") or "").strip()
+        if not question:
+            return []
         if not hasattr(self._store, "search_raw"):
             raise RuntimeError("Vector store does not implement search_raw(query, top_k=...).")
 
-        raw_hits = self._store.search_raw(question, top_k=self.top_k * 3)
-        cache = self._meta_map()
+        top_k = self._resolve_top_k(payload)
+        filters = self._merge_filters(payload)
+        settings = resolve_retrieval_settings(filters)
+
+        ann_start = perf_counter()
+        overfetch = max(top_k * 5, 50)
+        raw_hits = self._store.search_raw(question, top_k=overfetch)
+        ann_ms = (perf_counter() - ann_start) * 1000.0
+
+        prepare_start = perf_counter()
+        processed_hits = prepare_hits(raw_hits, self._store, settings, limit=top_k)
+        prepare_ms = (perf_counter() - prepare_start) * 1000.0
+
         docs: List[Document] = []
-        per_doc_counts: Dict[str, int] = {}
+        for hit in processed_hits:
+            metadata = dict(hit.get("metadata", {}) if isinstance(hit, dict) else {})
+            text = metadata.get("preview") or metadata.get("text") or ""
+            metadata.setdefault("preview", text)
+            metadata.setdefault("text", text)
+            metadata.setdefault("score", hit.get("score", metadata.get("score")))
+            metadata.setdefault("faiss_score", hit.get("faiss_score"))
+            if hit.get("rerank_score") is not None:
+                metadata.setdefault("rerank_score", hit.get("rerank_score"))
+            docs.append(Document(page_content=text, metadata=metadata))
 
-        for hit in raw_hits:
-            meta = hit.get("metadata", {}) if isinstance(hit, dict) else {}
-            chunk_id = meta.get("id") or hit.get("id")
-            if not chunk_id:
-                continue
-
-            rec = self._fetch_meta(chunk_id, cache) or meta
-            doc_id = rec.get("doc_id") or chunk_id.split("_chunk")[0]
-            title = rec.get("title") or meta.get("title") or doc_id
-            year_val = rec.get("year") or meta.get("year")
-            if not self._within_year_range(year_val):
-                continue
-
-            base_text = rec.get("text") or rec.get("preview") or meta.get("text") or ""
-            if not self._contains_match(base_text):
-                continue
-
-            stitched, chunk_indices, page_value = self._stitch(chunk_id, doc_id, cache)
-            if not stitched:
-                continue
-
-            if self.diversify_per_doc:
-                count = per_doc_counts.get(doc_id, 0)
-                if count >= 1:
-                    continue
-                per_doc_counts[doc_id] = count + 1
-
-            try:
-                score = float(hit.get("score", 0.0))
-            except Exception:
-                score = 0.0
-
-            metadata = {
-                "doc_id": doc_id,
-                "title": title,
-                "year": year_val,
-                "page": page_value,
-                "chunk_indices": chunk_indices,
-                "score": score,
-            }
-            metadata = enrich_metadata(metadata)
-            docs.append(Document(page_content=stitched, metadata=metadata))
-
-            if len(docs) >= self.top_k:
-                break
+        total_ms = ann_ms + prepare_ms
+        object.__setattr__(self, "_last_timing", {
+            "ann_ms": ann_ms,
+            "stitch_ms": prepare_ms,
+            "total_ms": total_ms,
+        })
 
         return docs
 
@@ -249,7 +213,14 @@ class RerankDecoratorRetriever(BaseRetriever):
             md = dict(d.metadata)
             md["text"] = d.page_content
             md.setdefault("preview", d.page_content)
-            hits.append({"score": md.get("score"), "metadata": md})
+            base_score = md.get("score")
+            faiss_score = md.get("faiss_score", base_score)
+            hit_payload = {
+                "score": base_score,
+                "faiss_score": faiss_score,
+                "metadata": md,
+            }
+            hits.append(hit_payload)
 
         try:
             reranked = self.reranker.rerank(
@@ -263,7 +234,15 @@ class RerankDecoratorRetriever(BaseRetriever):
         for h in reranked:
             md = dict(h["metadata"])
             text = md.pop("text", "") or md.get("preview", "")
-            md["score"] = h.get("score")
+            faiss_score = h.get("faiss_score", md.get("faiss_score"))
+            rerank_score = h.get("rerank_score")
+            if faiss_score is not None:
+                md["faiss_score"] = faiss_score
+            if rerank_score is not None:
+                md["rerank_score"] = rerank_score
+                md["score"] = rerank_score
+            else:
+                md["score"] = h.get("score")
             md = enrich_metadata(md)
             out.append(Document(page_content=text, metadata=md))
         return out

@@ -11,6 +11,13 @@ import streamlit as st
 st.set_page_config(page_title="Cotton Knowledge Hub — Prototype", layout="wide")
 st.title("AI Knowledge Hub — Prototype")
 
+DEMO_QUERIES = [
+    "Summarise key sustainability outcomes reported for Australian cotton in 2022.",
+    "What biodiversity management tools were delivered through the Cotton Landcare Tech Innovations project?",
+    "Which partnerships or innovations were highlighted in recent cotton travel and conference reports?",
+    "How are growers addressing lint yield variability across different soil zones?",
+]
+
 
 @st.cache_resource
 def resolve_api_base(default: Optional[str] = None) -> str:
@@ -49,6 +56,24 @@ def api_url(path: str) -> str:
 SWAGGER_UI = f"{API_ROOT}/docs"
 
 st.caption(f"Open API Explorer: [{SWAGGER_UI}]({SWAGGER_UI})")
+
+st.markdown(
+    """
+    <style>
+    .answer-text {
+        font-size: 2.1rem;
+        line-height: 1.6;
+    }
+    .answer-text ul {
+        padding-left: 1.4rem;
+    }
+    .answer-text strong {
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=30)
@@ -144,7 +169,18 @@ def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
 # -------- Ask --------
 with tabs[0]:
     st.subheader("Ask a question")
-    q = st.text_input("e.g., What environmental outcomes were reported in 2023?")
+    if "ask_question" not in st.session_state:
+        st.session_state["ask_question"] = ""
+
+    st.caption("Need inspiration? Try one of these sample questions:")
+    for idx in range(0, len(DEMO_QUERIES), 3):
+        row = DEMO_QUERIES[idx : idx + 3]
+        cols = st.columns(len(row))
+        for offset, (col, sample) in enumerate(zip(cols, row)):
+            if col.button(sample, key=f"demo_query_{idx}_{offset}"):
+                st.session_state["ask_question"] = sample
+
+    q = st.text_input("e.g., What environmental outcomes were reported in 2023?", key="ask_question")
     stream_mode = st.toggle(
         "Stream answer (experimental)",
         value=False,
@@ -216,7 +252,7 @@ with tabs[0]:
             citations = []
 
         answer_header.markdown("### Answer")
-        answer_body.write(answer)
+        answer_body.markdown(f"<div class='answer-text'>{answer}</div>", unsafe_allow_html=True)
 
         citations_header.markdown("### Citations")
         if not citations:
@@ -315,7 +351,14 @@ with tabs[1]:
                 c1, c2, c3 = st.columns(3)
                 c1.caption(f"doc_id: `{hit.get('doc_id', '')}`")
                 c2.caption(f"page: {hit.get('page') or '—'}")
-                c3.caption(f"score: {round(hit.get('score', 0.0), 3)}")
+                faiss_val = hit.get("faiss_score")
+                rerank_val = hit.get("rerank_score")
+                if rerank_val is not None and faiss_val is not None:
+                    c3.caption(f"rerank: {round(rerank_val, 3)} · faiss: {round(faiss_val, 3)}")
+                elif rerank_val is not None:
+                    c3.caption(f"rerank: {round(rerank_val, 3)}")
+                else:
+                    c3.caption(f"score: {round(hit.get('score', 0.0), 3)}")
 
             downloadable.append(
                 {
@@ -325,6 +368,8 @@ with tabs[1]:
                     "year": hit.get("year"),
                     "page": hit.get("page"),
                     "score": hit.get("score"),
+                    "faiss_score": hit.get("faiss_score"),
+                    "rerank_score": hit.get("rerank_score"),
                     "preview": hit.get("preview"),
                     "pdf_url": hit.get("pdf_url"),
                     "source_url": hit.get("source_url"),

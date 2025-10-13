@@ -83,12 +83,25 @@ def format_citation(hit: Dict[str, Any]) -> Dict[str, Any]:
     metadata = hit.get("metadata", {}) if isinstance(hit, dict) else {}
     page = _coerce_page(metadata.get("page"))
 
+    faiss_score = None
+    rerank_score = None
+    if isinstance(hit, dict):
+        faiss_score = hit.get("faiss_score")
+        rerank_score = hit.get("rerank_score")
+    if faiss_score is None:
+        faiss_score = metadata.get("faiss_score")
+    if rerank_score is None:
+        rerank_score = metadata.get("rerank_score")
+
     return {
         "title": metadata.get("title"),
         "year": metadata.get("year"),
         "page": page,
         "doc_id": metadata.get("doc_id"),
-        "score": hit.get("score") if isinstance(hit, dict) else None,
+        "score": hit.get("score") if isinstance(hit, dict) else metadata.get("score"),
+        "faiss_score": faiss_score,
+        "rerank_score": rerank_score,
+        "cosine": faiss_score,
         "snippet": metadata.get("preview") or metadata.get("text") or "",
         "url": metadata.get("url"),
         "source_url": metadata.get("source_url"),
