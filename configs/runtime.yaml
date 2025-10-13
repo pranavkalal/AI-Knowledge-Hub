@@ -1,4 +1,10 @@
 # configs/runtime.yaml
+# Master runtime configuration for the Knowledge Hub pipeline.
+# - Switch orchestrators between native and LangChain via 'orchestrator'.
+# - Update adapters/models here instead of touching source code.
+# - Retriever options (filters, multi-query, compression) live under 'retrieval'.
+# - LangChain-specific toggles (tracing, streaming callbacks) live under 'langchain'.
+
 orchestrator: langchain            # choose between "langchain" or "native"
 
 embedder:
@@ -25,8 +31,15 @@ llm:
 retrieval:
   k: 6
   mode: dense                      # dense | bm25 | hybrid (your store decides)
-  rerank: true
+  rerank: false
   filters:
     year_min: 2019
     year_max: 2025
     # add other keys your store supports, e.g. contains, neighbors, per_doc
+
+  use_multiquery: false
+  use_compression: false
+
+langchain:
+  trace: true
+  stream: true

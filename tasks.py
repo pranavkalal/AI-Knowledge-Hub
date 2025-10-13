@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from invoke import Collection
 PY        = sys.executable
 API_HOST  = os.environ.get("HOST", "0.0.0.0")
 API_PORT  = int(os.environ.get("PORT", "8000"))
@@ -203,6 +204,11 @@ def eval_extract(c):
     _run(f'{PY} -m app.extraction_eval')
 
 @task
+def eval_retrieval(c, cfg="configs/runtime.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
+    """Evaluate retrieval metrics for native vs LangChain orchestrators."""
+    _run(f'{PY} -m scripts.eval_retrieval --cfg {cfg} --q {q} --k {k}')
+
+@task
 def clean(c):
     """Remove intermediate artifacts (safe)."""
     for p in [DOCS, CLEANED, CHUNKS]:
@@ -224,3 +230,14 @@ def rebuild(c):
     clobber(c)
     build(c)
     print("Rebuild complete.")
+
+
+ns = Collection.from_module(sys.modules[__name__])
+try:
+    eval_task = ns["eval_retrieval"]
+except KeyError:
+    pass
+else:
+    eval_ns = Collection("eval")
+    eval_ns.add_task(eval_task, name="retrieval")
+    ns.add_collection(eval_ns)

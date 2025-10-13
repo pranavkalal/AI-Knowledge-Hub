@@ -6,8 +6,10 @@ All provider choices live in configs/runtime.yaml.
 
 from time import perf_counter
 from typing import Optional, List
+import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, AliasChoices
 
 from app.factory import build_pipeline
@@ -46,6 +48,9 @@ class Citation(BaseModel):
     score: Optional[float] = None   # original retrieval score
     cosine: Optional[float] = None  # alias (when vectors are L2-normalized)
     url: Optional[str] = None
+    source_url: Optional[str] = None
+    rel_path: Optional[str] = None
+    filename: Optional[str] = None
 
 class AskResponse(BaseModel):
     answer: str
@@ -88,8 +93,20 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
     answer = out.get("answer") or ""
     raw_sources = out.get("sources") or []
 
+    def _coerce_page(value):
+        if isinstance(value, list) and value:
+            value = value[0]
+        if value in (None, "", []):
+            return None
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return None
+
     citations: List[Citation] = []
     for s in raw_sources:
+        page_val = _coerce_page(s.get("page"))
+        rel_path = s.get("rel_path") or s.get("filename")
         citations.append(
             Citation(
                 sid=s.get("sid"),
@@ -97,8 +114,11 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 title=s.get("title"),
                 name=s.get("name"),
                 year=s.get("year"),
-                page=s.get("page"),
+                page=page_val,
                 url=s.get("url"),
+                source_url=s.get("source_url"),
+                rel_path=rel_path,
+                filename=s.get("filename") or rel_path,
                 score=s.get("score"),
                 cosine=s.get("cosine", s.get("score")),
                 span=s.get("snippet") or s.get("span") or s.get("preview"),
@@ -116,9 +136,38 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
 
 # Accept both /ask and /ask/ to avoid 405s from sloppy URLs
 @router.post("/ask", response_model=AskResponse, response_model_exclude_none=True)
-def ask_post(req: AskRequest):
-    return _run_pipeline(req)
+async def ask_post(req: AskRequest, stream: bool = Query(False)):
+    if not stream:
+        return _run_pipeline(req)
+
+    question = (req.question or "").strip()
+    if len(question) < 5:
+        raise HTTPException(status_code=400, detail="Question too short.")
+
+    pipe = build_pipeline()
+    if not hasattr(pipe, "stream"):
+        raise HTTPException(status_code=400, detail="Streaming not supported by current orchestrator.")
+
+    stream_kwargs = {
+        "k": req.k,
+    }
+    if req.filters is not None:
+        stream_kwargs["filters"] = req.filters.model_dump(exclude_none=True)
+    if req.mode is not None:
+        stream_kwargs["mode"] = req.mode
+    if req.rerank is not None:
+        stream_kwargs["rerank"] = bool(req.rerank)
+
+    async def event_generator():
+        try:
+            async for chunk in pipe.stream(question=question, temperature=req.temperature, max_tokens=req.max_output_tokens, **stream_kwargs):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as exc:
+            print("[/api/ask] stream error:", repr(exc))
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.post("/ask/", response_model=AskResponse, response_model_exclude_none=True)
-def ask_post_slash(req: AskRequest):
-    return _run_pipeline(req)
+async def ask_post_slash(req: AskRequest, stream: bool = Query(False)):
+    return await ask_post(req, stream=stream)

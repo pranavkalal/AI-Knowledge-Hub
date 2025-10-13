@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 # Routers
 from app.routers import health, search
 from app.routers import ask  # new: /api/ask (Q&A with citations)
+from app.routers import pdf
 
 app = FastAPI(
     title="Cotton RAG API",
@@ -47,3 +48,4 @@ def ping():
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(ask.router, prefix="/api", tags=["ask"])
+app.include_router(pdf.router)

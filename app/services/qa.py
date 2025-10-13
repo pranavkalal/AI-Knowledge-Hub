@@ -6,10 +6,10 @@ Returns the generated answer and normalized source list for the API layer.
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
 from app.services.prompting import SYSTEM, build_user_prompt
+from app.services.formatting import format_citation, format_metadata, format_snippet
 from rag.retrieval.utils import (
     resolve_retrieval_settings,
     prepare_hits,
-    build_prompt_entries,
 )
 
 
@@ -81,38 +81,54 @@ class QAPipeline:
                 "usage": {"retrieved": 0},
             }
 
-        lines, srcs = build_prompt_entries(hits, snippet_char_limit=settings.max_snippet_chars)
+        lines = []
+        citations = []
+        for idx, hit in enumerate(hits, start=1):
+            md = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+            sid = f"S{idx}"
+            snippet = format_snippet(md.get("preview") or md.get("text") or "", settings.max_snippet_chars)
 
-        # 5) build prompt messages
+            title = md.get("title") or md.get("doc_id") or "Source"
+            meta_suffix = format_metadata(md)
+            line = f"[{sid}] {title}{f' {meta_suffix}' if meta_suffix else ''}: {snippet}"
+            lines.append(line)
+
+            citation = format_citation(hit)
+            citation["sid"] = sid
+            citation.setdefault("url", md.get("url"))
+            citation.setdefault("source_url", md.get("source_url"))
+            rel_path = md.get("rel_path") or md.get("filename")
+            if rel_path:
+                citation.setdefault("rel_path", rel_path)
+            citations.append(citation)
+
         user = build_user_prompt(q, "\n\n".join(lines))
-
-        # 6) call LLM
         answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
 
-        formatted_sources = []
-        for s in srcs:
-            label = s.get("sid") or ""
-            title = s.get("title") or s.get("doc_id") or "Source"
-            year = s.get("year")
-            page = s.get("page")
-            doc_id = s.get("doc_id")
-            url = s.get("url")
+        if citations:
+            formatted_sources = []
+            for cit in citations:
+                label = cit.get("sid") or ""
+                title = cit.get("title") or cit.get("doc_id") or "Source"
+                year = cit.get("year")
+                page = cit.get("page")
+                doc_id = cit.get("doc_id")
+                url = cit.get("url")
 
-            bits = []
-            if year is not None:
-                bits.append(str(year))
-            if page is not None:
-                bits.append(f"p.{page}")
-            if doc_id:
-                bits.append(doc_id)
+                bits = []
+                if year is not None:
+                    bits.append(str(year))
+                if page is not None:
+                    bits.append(f"p.{page}")
+                if doc_id:
+                    bits.append(doc_id)
 
-            suffix = f" ({', '.join(bits)})" if bits else ""
-            line = f"{label} — {title}{suffix}"
-            if url:
-                line = f"{line} — {url}"
-            formatted_sources.append(line)
+                suffix = f" ({', '.join(bits)})" if bits else ""
+                line = f"{label} — {title}{suffix}"
+                if url:
+                    line = f"{line} — {url}"
+                formatted_sources.append(line)
 
-        if formatted_sources:
             answer = f"{answer.strip()}\n\nSources:\n" + "\n".join(f"- {line}" for line in formatted_sources)
 
-        return {"answer": answer, "sources": srcs, "usage": usage}
+        return {"answer": answer, "sources": citations, "usage": usage}

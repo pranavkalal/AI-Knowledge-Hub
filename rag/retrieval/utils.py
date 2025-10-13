@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from rag.retrieval.pdf_links import enrich_metadata
+
 
 def neighbor_ids(chunk_id: str, neighbors: int) -> List[str]:
     """Return a list of neighbour chunk IDs ±N around chunk_id (expects suffix `_chunkNNNN`)."""
@@ -229,15 +231,14 @@ def prepare_hits(
 
         title = meta.get("title") or meta.get("doc_title") or doc_id or chunk_id
         meta["title"] = title
-        if "url" not in meta and "source_url" in meta:
-            meta["url"] = meta.get("source_url")
-
         year_val = meta.get("year")
         if isinstance(year_val, str):
             try:
                 meta["year"] = int(year_val)
             except ValueError:
                 meta["year"] = year_val
+
+        meta = enrich_metadata(meta)
 
         if not passes_filters(meta, settings.contains, settings.year_min, settings.year_max):
             continue
