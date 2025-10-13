@@ -61,11 +61,11 @@ st.markdown(
     """
     <style>
     .answer-text {
-        font-size: 1.1rem;
-        line-height: 1.6;
+        font-size: 1.1rem;          /* was 1.1rem  →  roughly +15–20% */
+        line-height: 1.75;           /* a bit more breathing room */
     }
     .answer-text ul {
-        padding-left: 1.4rem;
+        padding-left: 1.6rem;        /* extra indent for bullets */
     }
     .answer-text strong {
         font-weight: 600;

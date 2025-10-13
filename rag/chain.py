@@ -195,6 +195,8 @@ def build_chain(
     llm_config: Optional[Dict[str, Any]] = None,
 ) -> Runnable:
     filters = filters or {}
+    if not k:
+        k = 6
 
     if mode == "router":
         from rag.router_chain import build_router_chain
@@ -241,11 +243,11 @@ def build_chain(
         except (TypeError, ValueError):
             rerank_topn = None
 
-    effective_top_k = max(k, rerank_topn) if rerank_topn else k
+    candidate_limit = max(k * 5, rerank_topn) if rerank_topn else k * 5
 
     base_retriever_obj = PortsRetriever(
         store=store,
-        top_k=effective_top_k,
+        top_k=candidate_limit,
         neighbors=neighbors,
         contains=contains,
         year_range=year_range,
@@ -303,6 +305,7 @@ def build_chain(
         reranker=reranker if use_rerank and reranker else None,
         base_retriever=base_retriever_obj,
         default_k=k,
+        candidate_limit=candidate_limit,
     )
 
     llm_runnable: Runnable = _TimedRunnable("llm", _call_llm(llm))
@@ -366,12 +369,13 @@ class _TimedRunnable(Runnable):
 class _RetrievalRunnable(Runnable):
     """Run retrieval (and optional rerank) while recording timings."""
 
-    def __init__(self, retriever: Runnable, reranker: Any | None, *, base_retriever: Any, default_k: int):
+    def __init__(self, retriever: Runnable, reranker: Any | None, *, base_retriever: Any, default_k: int, candidate_limit: int):
         self.retriever = _TimedRunnable("retrieval", retriever)
         self.reranker = reranker
         self._base_retriever = base_retriever
         self._default_k = max(1, int(default_k))
         self._last_summary: Dict[str, float] | None = None
+        self._candidate_limit = max(1, int(candidate_limit))
 
     def _question_text(self, query: Any) -> str:
         if isinstance(query, dict):
@@ -435,11 +439,14 @@ class _RetrievalRunnable(Runnable):
         timing = getattr(self._base_retriever, "_last_timing", {})
         rerank_ms = 0.0
         rerank_batches = 0
+        print(f"[lc.debug] candidates_before_rerank={len(docs)}")
         if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
             rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
             rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
+            print(f"[lc.debug] after_rerank={len(docs)}")
         docs = docs[: self._default_k]
+        print(f"[lc.debug] final_k={len(docs)}")
         ann_ms = timing.get("ann_ms", 0.0)
         stitch_ms = timing.get("stitch_ms", 0.0)
         total_ms = timing.get("total_ms")
@@ -464,11 +471,14 @@ class _RetrievalRunnable(Runnable):
         timing = getattr(self._base_retriever, "_last_timing", {})
         rerank_ms = 0.0
         rerank_batches = 0
+        print(f"[lc.debug] candidates_before_rerank={len(docs)}")
         if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
             rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
             rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
+            print(f"[lc.debug] after_rerank={len(docs)}")
         docs = docs[: self._default_k]
+        print(f"[lc.debug] final_k={len(docs)}")
         ann_ms = timing.get("ann_ms", 0.0)
         stitch_ms = timing.get("stitch_ms", 0.0)
         total_ms = timing.get("total_ms")

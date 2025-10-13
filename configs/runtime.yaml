@@ -17,7 +17,7 @@ vector_store:
   path: data/embeddings/vectors.faiss
   ids:  data/embeddings/ids.npy
   meta: data/staging/chunks.jsonl
-  factory: IVF4096               # Optional FAISS factory string (e.g. IVF4096,Flat)
+  factory: IVF1024,Flat               # Optional FAISS factory string (e.g. IVF4096,Flat)
 
 reranker:
   adapter: bge_reranker            # or "none"
@@ -34,13 +34,13 @@ llm:
   max_output_tokens: 1500
 
 retrieval:
-  k: 8
+  k: 6
   mode: dense                      # dense | bm25 | hybrid (your store decides)
   rerank: false
   max_preview_chars: 4400          # stitching window for previews
   max_snippet_chars: 2600          # prompt snippet length
-  neighbors: 2                     # stitched neighbours on each side (FAISS + LC)
-  per_doc: 1                       # max results per document (set 0 to disable)
+  neighbors: 1                     # stitched neighbours on each side (FAISS + LC)
+  per_doc: 4                       # max results per document (set 0 to disable)
   diversify_per_doc: true          # enforce per-doc diversification in LangChain
   filters:
     year_min: 2019

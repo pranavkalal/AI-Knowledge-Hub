@@ -56,11 +56,11 @@ class QAPipeline:
                 rerank_topn = int(getattr(self.rerank, "topn"))
             except (TypeError, ValueError):
                 rerank_topn = None
-        candidate_limit = k
-        if rerank_topn:
-            candidate_limit = max(candidate_limit, rerank_topn)
+        candidate_limit = max(k * 5, rerank_topn if rerank_topn else 0)
+        if candidate_limit <= 0:
+            candidate_limit = k * 5
 
-        overfetch = max(candidate_limit * 5, 50)
+        overfetch = candidate_limit
         query_kwargs = {"k": overfetch}
         if mode is not None:
             query_kwargs["mode"] = mode
@@ -78,6 +78,7 @@ class QAPipeline:
         # 4) stitch metadata before reranking
         stitch_start = perf_counter()
         stitched_hits = prepare_hits(hits, self.store, settings, limit=candidate_limit)
+        print(f"[qa.debug] candidates_before_rerank={len(stitched_hits)}")
         stitch_ms = (perf_counter() - stitch_start) * 1000.0
 
         # 5) optional rerank
@@ -95,6 +96,9 @@ class QAPipeline:
         
         # 6) limit to requested k after rerank
         hits = final_hits[:k]
+        print(
+            f"[qa.debug] after_rerank={len(final_hits)} final_k={len(hits)}"
+        )
 
         if not hits:
             # no retrieval = don't pay LLM tax
