@@ -8,9 +8,10 @@
 orchestrator: langchain            # choose between "langchain" or "native"
 
 embedder:
-  adapter: bge_local
-  model: BAAI/bge-small-en-v1.5
-  normalize: true                  # recommended so inner-product ≈ cosine
+  adapter: openai
+  model: text-embedding-3-small
+  batch_size: 128
+  normalize: true                  # keep cosine similarity behaviour
 
 vector_store:
   adapter: faiss_local

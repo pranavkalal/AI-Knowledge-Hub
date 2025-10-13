@@ -5,16 +5,37 @@ Inputs:
   - JSONL chunks file with records containing at least: { "id": str, "text": str }
 Outputs:
   - NumPy arrays: embeddings.npy (float32), ids.npy (object)
-Keeps API and batch pipeline aligned via BGEEmbeddingAdapter.
+
+Supports both the local BGE SentenceTransformer and OpenAI's hosted embeddings so the
+batch pipeline stays aligned with runtime configuration.
 """
 
 import argparse
 import json
+import os
 from pathlib import Path
 import numpy as np
 
-# Use the same adapter the API uses
+# Embedding adapters
 from app.adapters.embed_bge import BGEEmbeddingAdapter
+
+try:  # optional dependency
+    from app.adapters.embed_openai import OpenAIEmbeddingAdapter
+except Exception:  # pragma: no cover - optional env
+    OpenAIEmbeddingAdapter = None
+
+
+def create_embedder(adapter_name: str, model: str, batch: int, normalize: bool):
+    key = (adapter_name or "bge").lower()
+    if key in {"bge", "bge_local"}:
+        return BGEEmbeddingAdapter(model_name=model, batch_size=batch, normalize=normalize)
+    if key in {"openai", "openai_embeddings"}:
+        if OpenAIEmbeddingAdapter is None:
+            raise RuntimeError(
+                "OpenAIEmbeddingAdapter not available. Ensure OpenAI dependencies are installed."
+            )
+        return OpenAIEmbeddingAdapter(model_name=model, batch_size=batch, normalize=normalize)
+    raise ValueError(f"Unknown embedding adapter: {adapter_name}")
 
 def main():
     ap = argparse.ArgumentParser()
@@ -23,6 +44,10 @@ def main():
     ap.add_argument("--out_ids", default="data/embeddings/ids.npy")
     ap.add_argument("--model", default="BAAI/bge-small-en-v1.5")
     ap.add_argument("--batch", type=int, default=64)
+    ap.add_argument("--adapter", default=os.getenv("EMB_ADAPTER", "bge"))
+    ap.add_argument("--normalize", dest="normalize", action="store_true")
+    ap.add_argument("--no-normalize", dest="normalize", action="store_false")
+    ap.set_defaults(normalize=True)
     args = ap.parse_args()
 
     Path(args.out_vecs).parent.mkdir(parents=True, exist_ok=True)
@@ -43,9 +68,8 @@ def main():
     if not texts:
         raise SystemExit("No chunks with text found. Check your chunks.jsonl.")
 
-    emb = BGEEmbeddingAdapter(args.model)
-    # SentenceTransformers does its own batching; we keep a flag here for future adapters
-    vecs = np.asarray(emb.embed_texts(texts), dtype="float32")
+    embedder = create_embedder(args.adapter, args.model, args.batch, args.normalize)
+    vecs = np.asarray(embedder.embed_texts(texts), dtype="float32")
 
     np.save(args.out_vecs, vecs)
     np.save(args.out_ids, np.array(ids, dtype=object))

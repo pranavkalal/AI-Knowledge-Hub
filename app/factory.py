@@ -42,6 +42,11 @@ try:
 except Exception:
     OllamaAdapter = None  # graceful fallback
 
+try:
+    from app.adapters.embed_openai import OpenAIEmbeddingAdapter
+except Exception:
+    OpenAIEmbeddingAdapter = None
+
 
 def _require_file(path: str | Path, label: str) -> None:
     p = Path(path)
@@ -57,6 +62,58 @@ def _load_cfg(cfg_path: str | Path) -> Dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
+def _build_embedder(cfg: Dict[str, Any]):
+    emb_cfg = cfg.get("embedder", {}) or {}
+    adapter_name = emb_cfg.get("adapter") or os.environ.get("EMB_ADAPTER") or "bge_local"
+    adapter_key = adapter_name.lower()
+
+    normalize = emb_cfg.get("normalize")
+    normalize = True if normalize is None else bool(normalize)
+
+    batch_size = emb_cfg.get("batch_size", emb_cfg.get("batch", 64))
+    try:
+        batch_size = int(batch_size)
+    except (TypeError, ValueError):
+        batch_size = 64
+
+    if adapter_key in {"bge", "bge_local"}:
+        model = os.environ.get("EMB_MODEL") or emb_cfg.get("model") or "BAAI/bge-small-en-v1.5"
+        show_progress = emb_cfg.get("show_progress", True)
+        return BGEEmbeddingAdapter(
+            model_name=model,
+            batch_size=batch_size,
+            normalize=normalize,
+            show_progress=bool(show_progress),
+        )
+
+    if adapter_key in {"openai", "openai_embeddings"}:
+        if OpenAIEmbeddingAdapter is None:
+            raise RuntimeError(
+                "embedder.adapter=openai but OpenAI embedding adapter is not available. "
+                "Add app/adapters/embed_openai.py or install the OpenAI dependency."
+            )
+        model = os.environ.get("EMB_MODEL") or emb_cfg.get("model") or "text-embedding-3-small"
+        max_retries = emb_cfg.get("max_retries", 3)
+        retry_backoff = emb_cfg.get("retry_backoff", 1.5)
+        try:
+            max_retries = int(max_retries)
+        except (TypeError, ValueError):
+            max_retries = 3
+        try:
+            retry_backoff = float(retry_backoff)
+        except (TypeError, ValueError):
+            retry_backoff = 1.5
+        return OpenAIEmbeddingAdapter(
+            model_name=model,
+            batch_size=batch_size,
+            normalize=normalize,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
+
+    raise ValueError(f"Unknown embedder.adapter: {adapter_name}")
+
+
 def build_pipeline(cfg_path: str = None):
     """
     Build and return an object with .ask(question, k, temperature, max_tokens, **kwargs).
@@ -67,9 +124,7 @@ def build_pipeline(cfg_path: str = None):
     cfg = _load_cfg(cfg_path)
 
     # ---------------- Embeddings ----------------
-    emb_cfg = cfg.get("embedder", {})
-    emb_model = emb_cfg.get("model", "BAAI/bge-small-en-v1.5")
-    emb = BGEEmbeddingAdapter(emb_model)
+    emb = _build_embedder(cfg)
 
     # ---------------- Vector Store ----------------
     vs_cfg = cfg.get("vector_store", {})

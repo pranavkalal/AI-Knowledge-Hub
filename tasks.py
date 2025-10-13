@@ -23,6 +23,7 @@ API_PORT  = int(os.environ.get("PORT", "8000"))
 UI_PORT   = int(os.environ.get("UI_PORT", "8501"))
 API_BASE  = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
 EMB_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
+EMB_ADAPTER = os.environ.get("EMB_ADAPTER", "bge")
 
 # Paths
 RAW_DIR    = Path("data/raw")
@@ -102,7 +103,8 @@ def embed(c):
         f'--chunks {CHUNKS} '
         f'--out_vecs {EMB_EDS} '
         f'--out_ids {EMB_IDS} '
-        f'--model "{EMB_MODEL}"'
+        f'--model "{EMB_MODEL}" '
+        f'--adapter "{EMB_ADAPTER}"'
     )
 
 @task
