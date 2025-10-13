@@ -37,8 +37,8 @@ retrieval:
   k: 6
   mode: dense                      # dense | bm25 | hybrid (your store decides)
   rerank: false
-  max_preview_chars: 4400          # stitching window for previews
-  max_snippet_chars: 2600          # prompt snippet length
+  max_preview_chars: 2400          # stitching window for previews
+  max_snippet_chars: 1600          # prompt snippet length
   neighbors: 1                     # stitched neighbours on each side (FAISS + LC)
   per_doc: 4                       # max results per document (set 0 to disable)
   diversify_per_doc: true          # enforce per-doc diversification in LangChain
