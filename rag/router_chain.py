@@ -5,7 +5,17 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from langchain_core.runnables import RunnableLambda
+try:
+    from langchain_core.runnables import RunnableLambda  # type: ignore[import]
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    class RunnableLambda:  # type: ignore[override]
+        """Fallback wrapper that raises if LangChain is unavailable."""
+
+        def __init__(self, fn):
+            self._fn = fn
+
+        def invoke(self, *args, **kwargs):
+            raise RuntimeError("langchain-core not installed; install to use router chain")
 
 from app.services.qa import QAPipeline
 

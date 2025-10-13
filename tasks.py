@@ -27,6 +27,7 @@ UI_PORT = int(os.environ.get("UI_PORT", "8501"))
 API_BASE = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
 
 RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime.yaml"))
+OPENAI_RUNTIME_CFG = Path("configs/runtime.openai.yaml")
 _RUNTIME_CACHE: dict | None = None
 
 
@@ -60,6 +61,15 @@ def _load_runtime_cfg() -> dict:
     except Exception:
         _RUNTIME_CACHE = {}
     return _RUNTIME_CACHE
+
+
+def _switch_runtime_cfg(path: Path) -> None:
+    global RUNTIME_CFG, _RUNTIME_CACHE
+    RUNTIME_CFG = Path(path)
+    _RUNTIME_CACHE = None
+    os.environ["COTTON_RUNTIME"] = str(RUNTIME_CFG)
+    if not RUNTIME_CFG.exists():
+        raise SystemExit(f"Runtime config not found: {RUNTIME_CFG}")
 
 
 def _resolve_embed_settings() -> dict:
@@ -281,6 +291,14 @@ def dev(c, reload=True):
                     api_proc.kill()
                 except Exception:
                     pass
+
+
+@task(name="dev2")
+def dev_openai(c, reload=True):
+    """Run dev task with OpenAI runtime preset."""
+    _switch_runtime_cfg(OPENAI_RUNTIME_CFG)
+    print(f"[dev2] Using runtime config {RUNTIME_CFG}")
+    dev(c, reload=reload)
 
 @task(name="eval-extract")
 def eval_extract(c):

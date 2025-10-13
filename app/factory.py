@@ -17,10 +17,27 @@ from typing import Any, Dict
 import yaml
 
 try:
-    from dotenv import load_dotenv  # optional, but nice for local dev
-    load_dotenv()
-except Exception:
-    pass
+    from importlib import import_module
+except ImportError:  # pragma: no cover - very old Python
+    import_module = None
+
+
+def _maybe_load_dotenv():
+    if import_module is None:
+        return
+    try:
+        load_dotenv = import_module("dotenv").load_dotenv  # type: ignore[attr-defined]
+    except ModuleNotFoundError:
+        return
+    except AttributeError:
+        return
+    try:
+        load_dotenv()
+    except Exception:
+        pass
+
+
+_maybe_load_dotenv()
 
 # Native pipeline
 from app.services.qa import QAPipeline
@@ -79,7 +96,13 @@ def build_pipeline(cfg_path: str = None):
     _require_file(ids_path, "IDs numpy file")
     _require_file(meta_path, "Chunks metadata JSONL")
 
-    store = FaissStoreAdapter(index_path=index_path, ids_path=ids_path, meta_path=meta_path)
+    store = FaissStoreAdapter(
+        index_path=index_path,
+        ids_path=ids_path,
+        meta_path=meta_path,
+        embed_model=cfg.get("embedder", {}).get("model") if isinstance(cfg.get("embedder"), dict) else None,
+        embed_config=cfg.get("embedder") if isinstance(cfg.get("embedder"), dict) else None,
+    )
 
     # ---------------- Reranker ----------------
     rr_cfg = cfg.get("reranker", {})
@@ -255,4 +278,3 @@ def build_pipeline(cfg_path: str = None):
 
     # Default: native pipeline
     return QAPipeline(emb, store, reranker, llm)
-

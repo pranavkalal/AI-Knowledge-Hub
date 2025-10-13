@@ -6,7 +6,7 @@ Implements VectorStorePort and reads ids.npy + chunks.jsonl for metadata.
 from __future__ import annotations
 
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Mapping
 import numpy as np
 import json
 from functools import lru_cache
@@ -21,6 +21,7 @@ class FaissStoreAdapter(VectorStorePort):
         ids_path: str,
         meta_path: str = "data/staging/chunks.jsonl",
         embed_model: Optional[str] = None,
+        embed_config: Optional[Mapping[str, object]] = None,
     ):
         # Load your wrapper class (not the raw faiss index)
         self.ff = FaissFlatIP.load(index_path)
@@ -29,6 +30,11 @@ class FaissStoreAdapter(VectorStorePort):
         self._meta = None
         self._embed_model = embed_model or os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
         self._embedder = None
+        self._embed_config: Dict[str, object] = dict(embed_config or {})
+        self._embed_config.setdefault("model", self._embed_model)
+        adapter = self._embed_config.get("adapter") or os.environ.get("EMB_ADAPTER")
+        if adapter:
+            self._embed_config["adapter"] = adapter
 
     def _load_meta(self) -> dict:
         if self._meta is None:
@@ -53,9 +59,9 @@ class FaissStoreAdapter(VectorStorePort):
 
     @lru_cache(maxsize=1)
     def _ensure_embedder(self):
-        from app.adapters.embed_bge import BGEEmbeddingAdapter
+        from app.adapters.loader import load_embedder
 
-        return BGEEmbeddingAdapter(self._embed_model)
+        return load_embedder(self._embed_config, os.environ)
 
     def add(self, ids: List[str], vectors: List[List[float]], metadatas: List[Dict]):
         # Index is built offline via scripts/build_faiss.py

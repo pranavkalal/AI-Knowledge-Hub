@@ -12,12 +12,33 @@ from contextvars import ContextVar
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from importlib import import_module
+except ImportError:  # pragma: no cover - very old Python
+    import_module = None
+
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.documents import Document
 from langchain_core.runnables import Runnable, RunnableLambda
 
 from rag.langchain_adapters import PortsRetriever
 from rag.callbacks import LoggingCallbackHandler
+
+
+def _maybe_load_dotenv() -> None:
+    if import_module is None:
+        return
+    try:
+        load_dotenv = import_module("dotenv").load_dotenv  # type: ignore[attr-defined]
+    except (ModuleNotFoundError, AttributeError):
+        return
+    try:
+        load_dotenv()
+    except Exception:
+        pass
+
+
+_maybe_load_dotenv()
 
 
 SYSTEM_PROMPT = (
@@ -168,7 +189,37 @@ def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _call_llm(llm):
+def _call_llm(llm, *, use_langchain_chat: bool = False):
+    if use_langchain_chat:
+        try:
+            from langchain.schema import HumanMessage, SystemMessage
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("langchain schema package missing; install langchain-core.") from exc
+
+        def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
+            temperature = float(inputs.get("temperature", 0.2))
+            max_tokens = int(inputs.get("max_tokens", 600))
+            messages = [
+                SystemMessage(content=inputs.get("system", SYSTEM_PROMPT)),
+                HumanMessage(content=inputs["user"]),
+            ]
+            response = llm.invoke(
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            usage: Dict[str, Any] = {}
+            metadata = getattr(response, "response_metadata", {}) or {}
+            for key in ("token_usage", "usage"):
+                if key in metadata and metadata[key]:
+                    usage = metadata[key]
+                    break
+            if not usage:
+                usage = getattr(response, "additional_kwargs", {}).get("usage", {}) if hasattr(response, "additional_kwargs") else {}
+            return {"answer": getattr(response, "content", ""), "usage": usage}
+
+        return RunnableLambda(_inner)
+
     def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
         answer, usage = llm.chat(
             inputs.get("system", SYSTEM_PROMPT),
@@ -195,6 +246,53 @@ def build_chain(
     llm_config: Optional[Dict[str, Any]] = None,
 ) -> Runnable:
     filters = filters or {}
+    langchain_cfg = llm_config or {}
+    chat_cfg = {}
+    use_chat_openai = False
+    if isinstance(langchain_cfg, dict):
+        chat_cfg = langchain_cfg.get("chat_openai", {}) or {}
+        use_chat_openai = bool(langchain_cfg.get("use_chat_openai"))
+
+    chat_llm = None
+    if use_chat_openai:
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-openai is required for use_chat_openai=true. Install it or disable the flag."
+            ) from exc
+
+        model_name = chat_cfg.get("model") or getattr(llm, "model", None) or "gpt-4o-mini"
+        temperature_default = chat_cfg.get("temperature")
+        if temperature_default is None:
+            temperature_default = getattr(llm, "temperature", 0.2)
+        max_tokens_default = (
+            chat_cfg.get("max_tokens")
+            or getattr(llm, "max_tokens", 600)
+        )
+        max_retries = chat_cfg.get("max_retries")
+        timeout = chat_cfg.get("timeout")
+
+        params: Dict[str, Any] = {
+            "model": model_name,
+            "temperature": float(temperature_default),
+            "streaming": bool(langchain_cfg.get("stream", False)),
+            "max_tokens": int(max_tokens_default) if max_tokens_default is not None else None,
+        }
+        if max_retries is not None:
+            try:
+                params["max_retries"] = int(max_retries)
+            except (TypeError, ValueError):
+                pass
+        if timeout is not None:
+            try:
+                params["timeout"] = float(timeout)
+            except (TypeError, ValueError):
+                pass
+
+        params = {k: v for k, v in params.items() if v is not None}
+        chat_llm = ChatOpenAI(**params)
+
     if not k:
         k = 6
 
@@ -308,7 +406,11 @@ def build_chain(
         candidate_limit=candidate_limit,
     )
 
-    llm_runnable: Runnable = _TimedRunnable("llm", _call_llm(llm))
+    llm_to_use = chat_llm if chat_llm is not None else llm
+    llm_runnable: Runnable = _TimedRunnable(
+        "llm",
+        _call_llm(llm_to_use, use_langchain_chat=chat_llm is not None),
+    )
 
     chain = (
         RunnableLambda(_init_timeline)
@@ -326,7 +428,7 @@ def build_chain(
         | RunnableLambda(_finalize_output)
     )
 
-    langchain_cfg = llm_config or {}
+    langchain_cfg = langchain_cfg or {}
     callbacks: List[Any] = []
     if langchain_cfg.get("trace"):
         try:
