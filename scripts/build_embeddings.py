@@ -16,26 +16,38 @@ import os
 from pathlib import Path
 import numpy as np
 
-# Embedding adapters
-from app.adapters.embed_bge import BGEEmbeddingAdapter
-
-try:  # optional dependency
-    from app.adapters.embed_openai import OpenAIEmbeddingAdapter
-except Exception:  # pragma: no cover - optional env
-    OpenAIEmbeddingAdapter = None
+from app.adapters.loader import load_embedder
 
 
-def create_embedder(adapter_name: str, model: str, batch: int, normalize: bool):
-    key = (adapter_name or "bge").lower()
-    if key in {"bge", "bge_local"}:
-        return BGEEmbeddingAdapter(model_name=model, batch_size=batch, normalize=normalize)
-    if key in {"openai", "openai_embeddings"}:
-        if OpenAIEmbeddingAdapter is None:
-            raise RuntimeError(
-                "OpenAIEmbeddingAdapter not available. Ensure OpenAI dependencies are installed."
-            )
-        return OpenAIEmbeddingAdapter(model_name=model, batch_size=batch, normalize=normalize)
-    raise ValueError(f"Unknown embedding adapter: {adapter_name}")
+def _infer_existing_dim(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    arr = None
+    try:
+        arr = np.load(path, mmap_mode="r")
+        if arr.ndim == 2 and arr.shape[0] > 0:
+            return int(arr.shape[1])
+    except Exception:
+        return None
+    finally:
+        if arr is not None:
+            del arr
+    return None
+
+
+def _infer_faiss_dim(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        import faiss  # type: ignore
+    except Exception:
+        return None
+    try:
+        idx = faiss.read_index(str(path))
+        return int(idx.d)
+    except Exception:
+        return None
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -68,8 +80,33 @@ def main():
     if not texts:
         raise SystemExit("No chunks with text found. Check your chunks.jsonl.")
 
-    embedder = create_embedder(args.adapter, args.model, args.batch, args.normalize)
+    embedder_cfg = {
+        "adapter": args.adapter,
+        "model": args.model,
+        "batch_size": args.batch,
+        "normalize": args.normalize,
+    }
+    embedder = load_embedder(embedder_cfg)
+
+    existing_dims = {}
+    prev_dim = _infer_existing_dim(Path(args.out_vecs))
+    if prev_dim is not None:
+        existing_dims["previous embeddings"] = prev_dim
+    faiss_dim = _infer_faiss_dim(Path(args.out_vecs).parent / "vectors.faiss")
+    if faiss_dim is not None:
+        existing_dims["current FAISS index"] = faiss_dim
+
     vecs = np.asarray(embedder.embed_texts(texts), dtype="float32")
+    new_dim = int(vecs.shape[1]) if vecs.ndim == 2 else None
+
+    if existing_dims and new_dim is not None:
+        mismatched = {label: dim for label, dim in existing_dims.items() if dim != new_dim}
+        if mismatched:
+            details = ", ".join(f"{label}={dim}" for label, dim in mismatched.items())
+            print(
+                f"[warn] Embedding dimension changed to {new_dim}. Previous artifacts ({details}) differ. "
+                "Rebuild the FAISS index via `invoke faiss` or run `invoke build` before serving queries."
+            )
 
     np.save(args.out_vecs, vecs)
     np.save(args.out_ids, np.array(ids, dtype=object))

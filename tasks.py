@@ -12,18 +12,84 @@ import sys
 import subprocess
 import time
 from pathlib import Path
+
+import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from invoke import Collection
-PY        = sys.executable
-API_HOST  = os.environ.get("HOST", "0.0.0.0")
-API_PORT  = int(os.environ.get("PORT", "8000"))
-UI_PORT   = int(os.environ.get("UI_PORT", "8501"))
-API_BASE  = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
-EMB_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
-EMB_ADAPTER = os.environ.get("EMB_ADAPTER", "bge")
+
+PY = sys.executable
+API_HOST = os.environ.get("HOST", "0.0.0.0")
+API_PORT = int(os.environ.get("PORT", "8000"))
+UI_PORT = int(os.environ.get("UI_PORT", "8501"))
+API_BASE = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
+
+RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime.yaml"))
+_RUNTIME_CACHE: dict | None = None
+
+
+def _coerce_bool(value, default=None):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            return True
+        if lowered in {"false", "0", "no", "n"}:
+            return False
+    try:
+        return bool(int(value))
+    except Exception:
+        return default
+
+
+def _load_runtime_cfg() -> dict:
+    global _RUNTIME_CACHE
+    if _RUNTIME_CACHE is not None:
+        return _RUNTIME_CACHE
+    if not RUNTIME_CFG.exists():
+        _RUNTIME_CACHE = {}
+        return _RUNTIME_CACHE
+    try:
+        with RUNTIME_CFG.open("r", encoding="utf-8") as fh:
+            _RUNTIME_CACHE = yaml.safe_load(fh) or {}
+    except Exception:
+        _RUNTIME_CACHE = {}
+    return _RUNTIME_CACHE
+
+
+def _resolve_embed_settings() -> dict:
+    cfg = _load_runtime_cfg().get("embedder", {}) or {}
+    adapter = os.environ.get("EMB_ADAPTER") or cfg.get("adapter") or "bge_local"
+    adapter_key = adapter.lower()
+    default_model = "BAAI/bge-small-en-v1.5"
+    if adapter_key.startswith("openai"):
+        default_model = "text-embedding-3-small"
+    model = os.environ.get("EMB_MODEL") or cfg.get("model") or default_model
+    normalize = _coerce_bool(cfg.get("normalize"), True)
+    batch_size = cfg.get("batch_size", cfg.get("batch", 64))
+    try:
+        batch_size = int(batch_size)
+    except (TypeError, ValueError):
+        batch_size = 64
+    return {
+        "adapter": adapter,
+        "model": model,
+        "batch_size": batch_size,
+        "normalize": normalize,
+    }
+
+
+def _resolve_llm_model(default: str = "gpt-4o-mini") -> str:
+    cfg = _load_runtime_cfg().get("llm", {}) or {}
+    return os.environ.get("LLM_MODEL") or cfg.get("model") or default
+
+
+LLM_MODEL = _resolve_llm_model()
 
 # Paths
 RAW_DIR    = Path("data/raw")
@@ -98,18 +164,34 @@ def embed(c):
     if _jsonl_count(CHUNKS) == 0:
         raise SystemExit("No chunks with text found. Check data/staging/chunks.jsonl (ingestion probably produced 0 docs).")
     _ensure_parent(EMB_EDS)
+    settings = _resolve_embed_settings()
+    adapter = settings["adapter"]
+    model = settings["model"]
+    batch = settings["batch_size"]
+    normalize = settings["normalize"]
+    print(f"[embed] adapter={adapter} model={model} batch={batch}")
+    normalize_flag = ""
+    if normalize is False:
+        normalize_flag = " --no-normalize"
+    elif normalize is True:
+        normalize_flag = " --normalize"
+
     _run(
         f'{PY} -m scripts.build_embeddings '
         f'--chunks {CHUNKS} '
         f'--out_vecs {EMB_EDS} '
         f'--out_ids {EMB_IDS} '
-        f'--model "{EMB_MODEL}" '
-        f'--adapter "{EMB_ADAPTER}"'
+        f'--model "{model}" '
+        f'--adapter "{adapter}" '
+        f'--batch {batch}'
+        f'{normalize_flag}'
     )
 
 @task
 def faiss(c):
     """Build FAISS index (embeddings -> vectors.faiss)."""
+    settings = _resolve_embed_settings()
+    print(f"[faiss] using embeddings from adapter={settings['adapter']} model={settings['model']}")
     _ensure_parent(FAISS_IDX)
     _run(f'{PY} -m scripts.build_faiss --vecs {EMB_EDS} --index_out {FAISS_IDX}')
 

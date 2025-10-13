@@ -12,6 +12,10 @@ CHUNKS ?= data/staging/chunks.jsonl
 EMBEDS ?= data/embeddings/embeddings.npy
 INDEX  ?= data/embeddings/vectors.faiss
 ARGS   ?=
+EMB_ADAPTER ?= openai
+EMB_MODEL ?= text-embedding-3-small
+EMB_BATCH ?= 128
+EMB_NORMALIZE ?= 1
 
 # -------- Cross-platform shims
 ifeq ($(OS),Windows_NT)
@@ -61,7 +65,8 @@ chunk-stats:
 	$(PY) tests/chunk_stats.py --in $(CHUNKS)
 
 embed:
-	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_embeddings --chunks $(CHUNKS)
+	@if [ "$(EMB_NORMALIZE)" = "0" ]; then NORM_FLAG=--no-normalize; else NORM_FLAG=--normalize; fi; \
+	EMB_ADAPTER=$(EMB_ADAPTER) EMB_MODEL=$(EMB_MODEL) PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_embeddings --chunks $(CHUNKS) --adapter $(EMB_ADAPTER) --model $(EMB_MODEL) --batch $(EMB_BATCH) $$NORM_FLAG
 
 faiss:
 	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_faiss --vecs $(EMBEDS) --index_out $(INDEX)
@@ -144,7 +149,6 @@ ask:
 	@curl -s http://localhost:$(PORT)/api/ask \
 		-H "Content-Type: application/json" \
 		-d "$$(jq -nc --arg q "$(Q)" --argjson k $(K) '{question:$$q, k:$$k}')" | jq
-
 
 
 
