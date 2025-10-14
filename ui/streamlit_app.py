@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 st.set_page_config(page_title="Cotton Knowledge Hub — Prototype", layout="wide")
-st.title("AI Knowledge Hub — Prototype")
+st.title("AI Knowledge Hub")
 
 DEMO_QUERIES = [
     "What were the standout innovations shared at the 2024 Australian Cotton Conference?",
