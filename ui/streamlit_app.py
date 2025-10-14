@@ -12,10 +12,10 @@ st.set_page_config(page_title="Cotton Knowledge Hub — Prototype", layout="wide
 st.title("AI Knowledge Hub — Prototype")
 
 DEMO_QUERIES = [
-    "Summarise key sustainability outcomes reported for Australian cotton in 2022.",
-    "What biodiversity management tools were delivered through the Cotton Landcare Tech Innovations project?",
-    "Which partnerships or innovations were highlighted in recent cotton travel and conference reports?",
-    "How are growers addressing lint yield variability across different soil zones?",
+    "What were the standout innovations shared at the 2024 Australian Cotton Conference?",
+    "Which grower–industry partnerships are strengthening the cotton supply chain in 2023–24?",
+    "How are northern cotton regions adapting water and soil practices for climate resilience?",
+    "Summarise the workforce programs helping attract new talent into Australian cotton.",
 ]
 
 
