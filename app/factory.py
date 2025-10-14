@@ -49,6 +49,7 @@ from app.adapters.vector_faiss import FaissStoreAdapter
 # Rerankers
 from app.adapters.rerank_noop import NoopReranker
 from app.adapters.rerank_bge import BGERerankerAdapter  # requires sentence-transformers
+from app.adapters.rerank_openai import OpenAIRerankerAdapter
 
 # LLMs
 from app.adapters.llm_openai import OpenAIAdapter
@@ -80,7 +81,7 @@ def build_pipeline(cfg_path: str = None):
     If orchestrator=langchain in config, returns a thin wrapper around a LangChain chain.
     Otherwise returns the native QAPipeline.
     """
-    cfg_path = cfg_path or os.environ.get("COTTON_RUNTIME", "configs/runtime.yaml")
+    cfg_path = cfg_path or os.environ.get("COTTON_RUNTIME", "configs/runtime.openai.yaml")
     cfg = _load_cfg(cfg_path)
 
     # ---------------- Embeddings ----------------
@@ -119,6 +120,23 @@ def build_pipeline(cfg_path: str = None):
             batch_size=int(rr_batch) if rr_batch is not None else 16,
             max_length=int(rr_max_len) if rr_max_len is not None else 256,
             device=rr_device,
+        )
+    elif rr_adapter in ("openai", "openai_reranker", "openai-reranker"):
+        rr_model = rr_cfg.get("model", "text-embedding-3-large")
+        rr_topn = rr_cfg.get("topn")
+        rr_max_candidates = rr_cfg.get("max_candidates")
+        rr_truncate = rr_cfg.get("truncate_chars", 1200)
+        rr_norm = rr_cfg.get("normalize")
+        rr_retries = rr_cfg.get("max_retries", 3)
+        rr_backoff = rr_cfg.get("retry_backoff", 1.5)
+        reranker = OpenAIRerankerAdapter(
+            model_name=rr_model,
+            topn=int(rr_topn) if rr_topn is not None else 20,
+            max_candidates=int(rr_max_candidates) if rr_max_candidates is not None else None,
+            truncate_chars=int(rr_truncate),
+            normalize=True if rr_norm is None else bool(rr_norm),
+            max_retries=int(rr_retries) if rr_retries is not None else 3,
+            retry_backoff=float(rr_backoff) if rr_backoff is not None else 1.5,
         )
     else:
         reranker = NoopReranker()
@@ -260,17 +278,54 @@ def build_pipeline(cfg_path: str = None):
                 if not self.stream_enabled:
                     raise RuntimeError("Streaming not enabled")
                 payload = self._build_payload(question, temperature, max_tokens, dict(kwargs))
+                root_run_id = None
                 async for event in self.chain.astream_events(payload, version="v1"):
                     evt_type = event.get("event")
+                    if evt_type == "on_chain_start" and not root_run_id and not event.get("parent_ids"):
+                        root_run_id = event.get("run_id")
                     data = event.get("data") or {}
-                    if evt_type == "on_llm_stream":
-                        chunk = data.get("chunk")
-                        if isinstance(chunk, dict):
-                            chunk = chunk.get("content") or chunk.get("text")
-                        if chunk:
-                            yield {"type": "token", "token": chunk}
-                    elif evt_type == "on_chain_end":
+                    if evt_type in {"on_llm_stream", "on_chat_model_stream"}:
+                        chunk_payload = data.get("chunk") or data.get("output")
+                        chunk_payload = data.get("chunk") or data.get("output")
+                        text = None
+                        if chunk_payload is None:
+                            continue
+                        if isinstance(chunk_payload, dict):
+                            candidate = chunk_payload.get("content") or chunk_payload.get("text")
+                            if isinstance(candidate, list):
+                                text = "".join(
+                                    item.get("text", "") if isinstance(item, dict) else str(item)
+                                    for item in candidate
+                                )
+                            else:
+                                text = candidate if candidate is not None else chunk_payload.get("delta")
+                        elif hasattr(chunk_payload, "content"):
+                            content = getattr(chunk_payload, "content")
+                            if isinstance(content, list):
+                                text = "".join(
+                                    item.get("text", "") if isinstance(item, dict) else str(item)
+                                    for item in content
+                                )
+                            else:
+                                text = content
+                        else:
+                            text = str(chunk_payload)
+
+                        if text:
+                            yield {"type": "token", "token": text}
+                    elif evt_type == "on_chain_end" and root_run_id and event.get("run_id") == root_run_id:
                         output = data.get("output") or {}
+                        if hasattr(output, "content"):
+                            content = getattr(output, "content")
+                            if isinstance(content, list):
+                                output = {
+                                    "answer": "".join(
+                                        item.get("text", "") if isinstance(item, dict) else str(item)
+                                        for item in content
+                                    )
+                                }
+                            else:
+                                output = {"answer": content}
                         yield {"type": "final", "output": output}
                         return
 

@@ -26,7 +26,7 @@ API_PORT = int(os.environ.get("PORT", "8000"))
 UI_PORT = int(os.environ.get("UI_PORT", "8501"))
 API_BASE = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
 
-RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime.yaml"))
+RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime.openai.yaml"))
 OPENAI_RUNTIME_CFG = Path("configs/runtime.openai.yaml")
 _RUNTIME_CACHE: dict | None = None
 
@@ -162,7 +162,7 @@ def clean_extract(c):
     _run(f"{PY} -m app.clean_extract --in {DOCS} --out {CLEANED}")
 
 @task
-def chunk(c, max_tokens=512, overlap=64, use_cleaned=True):
+def chunk(c, max_tokens=896, overlap=128, use_cleaned=True):
     """Chunk docs -> chunks.jsonl"""
     _ensure_parent(CHUNKS)
     src = CLEANED if use_cleaned and CLEANED.exists() else DOCS
@@ -306,7 +306,7 @@ def eval_extract(c):
     _run(f'{PY} -m app.extraction_eval')
 
 @task
-def eval_retrieval(c, cfg="configs/runtime.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
+def eval_retrieval(c, cfg="configs/runtime.openai.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
     """Evaluate retrieval metrics for native vs LangChain orchestrators."""
     _run(f'{PY} -m scripts.eval_retrieval --cfg {cfg} --q {q} --k {k}')
 

@@ -19,11 +19,12 @@ vector_store:
   meta: data/staging/chunks.jsonl
 
 reranker:
-  adapter: bge_reranker
-  model: BAAI/bge-reranker-base
+  adapter: openai_reranker
+  model: text-embedding-3-large
   topn: 20
-  batch_size: 16
-  max_length: 256
+  truncate_chars: 1200
+  max_retries: 5
+  retry_backoff: 2.0
 
 llm:
   adapter: openai

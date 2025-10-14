@@ -12,22 +12,62 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBED_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
 
 
-@lru_cache(maxsize=4)
-def get_tokenizer(model_name: Optional[str] = None) -> PreTrainedTokenizerBase:
-    """Load and cache the tokenizer that matches the embedding model."""
-    name = model_name or DEFAULT_EMBED_MODEL
+def _coerce_int(value: Optional[str], default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+DEFAULT_MAX_TOKENS = _coerce_int(os.environ.get("CHUNK_MAX_TOKENS"), 896)
+DEFAULT_OVERLAP = _coerce_int(os.environ.get("CHUNK_OVERLAP"), 128)
+
+
+def _load_hf_tokenizer(name: str) -> Optional[PreTrainedTokenizerBase]:
     try:
         tok = AutoTokenizer.from_pretrained(name, use_fast=True)
-    except (ValueError, OSError) as exc:
-        raise RuntimeError(
-            f"No fast tokenizer available for '{name}'. "
-            "A fast tokenizer is required for offset-based chunking."
-        ) from exc
-
-    # Disable max length warnings; we manage truncation manually.
+    except (ValueError, OSError, RuntimeError):
+        return None
     if getattr(tok, "model_max_length", None) and tok.model_max_length < 10**6:
         tok.model_max_length = 10**6
     return tok
+
+
+@lru_cache(maxsize=4)
+def get_tokenizer(model_name: Optional[str] = None) -> PreTrainedTokenizerBase:
+    """Load and cache a fast tokenizer for chunking text.
+
+    Falls back to ``CHUNK_TOKENIZER_MODEL`` or BAAI/bge-small-en-v1.5 when the
+    requested embedding family (for example OpenAI ``text-embedding-3-small``)
+    does not expose a Hugging Face tokenizer.
+    """
+
+    requested = model_name or DEFAULT_EMBED_MODEL
+    fallback_env = os.environ.get("CHUNK_TOKENIZER_MODEL")
+    fallback_default = "BAAI/bge-small-en-v1.5"
+
+    candidates: List[str] = []
+    # Attempt the requested model first
+    candidates.append(requested)
+    if fallback_env and fallback_env not in candidates:
+        candidates.append(fallback_env)
+    if requested.startswith("text-embedding-") and fallback_default not in candidates:
+        candidates.append(fallback_default)
+
+    for name in candidates:
+        tok = _load_hf_tokenizer(name)
+        if tok is not None:
+            if name != requested:
+                logger.warning(
+                    "Tokenizer '%s' unavailable; falling back to '%s' for chunking.",
+                    requested,
+                    name,
+                )
+            return tok
+
+    raise RuntimeError(
+        "Unable to load a fast tokenizer for chunking. Tried: " + ", ".join(candidates)
+    )
 
 
 def _resolve_char_span(
@@ -56,10 +96,14 @@ def _resolve_char_span(
     return span_start, span_end
 
 
+DEFAULT_MAX_TOKENS = int(os.environ.get("CHUNK_MAX_TOKENS", 896))
+DEFAULT_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 128))
+
+
 def chunk_text(
     text: str,
-    max_tokens: int = 512,
-    overlap: int = 64,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    overlap: int = DEFAULT_OVERLAP,
     *,
     tokenizer: Optional[PreTrainedTokenizerBase] = None,
 ) -> Iterator[Dict[str, int | str]]:
@@ -67,6 +111,8 @@ def chunk_text(
     Yield chunk dictionaries containing text and positional metadata.
 
     Each yielded dict includes: text, token_start, token_end, char_start, char_end.
+    Defaults are tuned for OpenAI `text-embedding-3-small` (max_tokens≈896, overlap≈128).
+    Override via function args or env vars `CHUNK_MAX_TOKENS` / `CHUNK_OVERLAP`.
     """
     if max_tokens <= 0:
         raise ValueError("max_tokens must be positive")
@@ -124,8 +170,8 @@ def chunk_text(
 
 def chunk_record(
     rec: Dict,
-    max_tokens: int = 512,
-    overlap: int = 64,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    overlap: int = DEFAULT_OVERLAP,
     *,
     tokenizer: Optional[PreTrainedTokenizerBase] = None,
 ) -> List[Dict]:
@@ -170,8 +216,8 @@ def chunk_record(
 
 def chunk_stream(
     records: Iterable[Dict],
-    max_tokens: int = 512,
-    overlap: int = 64,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    overlap: int = DEFAULT_OVERLAP,
     *,
     tokenizer: Optional[PreTrainedTokenizerBase] = None,
 ) -> Iterator[Dict]:

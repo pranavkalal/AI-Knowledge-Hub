@@ -3,7 +3,7 @@
 Evaluate retrieval quality for both native and LangChain orchestrators.
 
 Usage:
-    python scripts/eval_retrieval.py --cfg configs/runtime.yaml \
+    python scripts/eval_retrieval.py --cfg configs/runtime.openai.yaml \
         --q eval/gold/gold_ai_knowledge_hub.jsonl --k 6
 """
 
@@ -20,7 +20,7 @@ import app.factory as factory
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate retrieval metrics for native vs LangChain pipelines.")
-    parser.add_argument("--cfg", default="configs/runtime.yaml", help="Path to runtime YAML config.")
+    parser.add_argument("--cfg", default="configs/runtime.openai.yaml", help="Path to runtime YAML config.")
     parser.add_argument(
         "--q",
         default="eval/gold/gold_ai_knowledge_hub.jsonl",

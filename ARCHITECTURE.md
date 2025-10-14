@@ -29,7 +29,7 @@
 3. **Chunking** — `app/chunk.py` and `rag.segment.chunker` tokenise and window content into overlapping records stored in `data/staging/chunks.jsonl`.
 4. **Embedding build** — `scripts/build_embeddings.py` reuses `BGEEmbeddingAdapter` to encode chunks into `data/embeddings/embeddings.npy` with aligned `ids.npy`.
 5. **Vector index** — `scripts/build_faiss.py` and `store.store_faiss.FaissFlatIP` convert embeddings into `data/embeddings/vectors.faiss`.
-6. **Serving pipeline** — `app.factory.build_pipeline` wires adapters per `configs/runtime.yaml`, returning either the native `QAPipeline` (`app/services/qa.py`) or the LangChain graph (`rag/chain.py`).
+6. **Serving pipeline** — `app.factory.build_pipeline` wires adapters per `configs/runtime.openai.yaml`, returning either the native `QAPipeline` (`app/services/qa.py`) or the LangChain graph (`rag/chain.py`).
 7. **Interfaces** — FastAPI routers in `app/routers/` expose `/api/search` and `/api/ask`; `ui/streamlit_app.py` and CLI utilities (`scripts/query_faiss.py`) consume the same retrieval stack.
 
 ## Data Flow Diagram
@@ -86,7 +86,7 @@
 ## Adapter Stack & Configuration
 | Component | Default adapter | Implementation | Config knobs |
 | --- | --- | --- | --- |
-| Embeddings | `bge_local` | `app/adapters/embed_bge.BGEEmbeddingAdapter` wrapping `rag/embed/embedder.py` | `configs/runtime.yaml: embedder.model`, `EMB_MODEL` env var |
+| Embeddings | `bge_local` | `app/adapters/embed_bge.BGEEmbeddingAdapter` wrapping `rag/embed/embedder.py` | `configs/runtime.openai.yaml: embedder.model`, `EMB_MODEL` env var |
 | Vector store | `faiss_local` | `app/adapters/vector_faiss.FaissStoreAdapter` loading `store/store_faiss.FaissFlatIP` | `runtime.yaml: vector_store.path`, `ids`, `meta`; `FAISS_*` env overrides |
 | Reranker | `bge_reranker` (or `none`) | `app/adapters/rerank_bge.BGERerankerAdapter` or `NoopReranker` | `runtime.yaml: reranker.adapter`, `model`; optional `retrieval.rerank` toggle |
 | LLM | `ollama` (default) or `openai` | `app/adapters/llm_ollama.OllamaAdapter` / `llm_openai.OpenAIAdapter` | `runtime.yaml: llm.adapter`, `model`, `temperature`, `max_output_tokens`; `OLLAMA_HOST` / OpenAI env credentials |

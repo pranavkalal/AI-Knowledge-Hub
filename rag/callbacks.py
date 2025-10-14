@@ -49,7 +49,7 @@ class LoggingCallbackHandler(BaseCallbackHandler):
             + (f" elapsed={elapsed:.3f}s" if elapsed is not None else "")
         )
 
-    def on_llm_end(self, *_, response: Any, **__):
+    def on_llm_end(self, response: Any, *, run_id=None, parent_run_id=None, **kwargs):
         usage = getattr(response, 'usage', {}) or {}
         print(
             f"[{self._now()}] llm:end prompt_tokens={usage.get('prompt_tokens')}"
