@@ -7,6 +7,8 @@ Wraps your retriever, optional reranker, and LLM into an LCEL graph.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import time
 from contextvars import ContextVar
 from functools import partial
@@ -19,10 +21,23 @@ except ImportError:  # pragma: no cover - very old Python
 
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.documents import Document
-from langchain_core.runnables import Runnable, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableLambda, RunnableWithFallbacks
 
-from rag.langchain_adapters import PortsRetriever
+from app.services.qa import QAPipeline
+
 from rag.callbacks import LoggingCallbackHandler
+from rag.prompts.structured import (
+    SYSTEM_PROMPT,
+    StructuredAnswer,
+    USER_PROMPT_TEMPLATE,
+    ValidationError,
+    build_prompt_messages,
+    extract_usage,
+    format_structured_answer,
+    message_to_text,
+    prepare_prompt_state,
+)
+from rag.retrievers import PortsRetriever
 
 
 def _maybe_load_dotenv() -> None:
@@ -39,14 +54,6 @@ def _maybe_load_dotenv() -> None:
 
 
 _maybe_load_dotenv()
-
-
-SYSTEM_PROMPT = (
-    "You are a careful assistant for Australian cotton R&D. "
-    "Answer ONLY from the provided source passages. "
-    "Include inline citations using [S#] per passage and provide a Sources section."
-)
-
 _TIMELINE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("_rag_chain_timeline", default=None)
 
 
@@ -81,17 +88,6 @@ def _consume_timeline() -> List[Dict[str, Any]]:
     return snapshot
 
 
-def _normalize_page(value: Any) -> Optional[int]:
-    if isinstance(value, list) and value:
-        value = value[0]
-    if value in (None, "", []):
-        return None
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return None
-
-
 def _sanitize_contains(value: Any) -> Optional[List[str]]:
     if value is None:
         return None
@@ -113,121 +109,77 @@ def _maybe_int(value: Any) -> Optional[int]:
         return None
 
 
-def _prepare_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    question = data["question"]
-    docs: List[Document] = data.get("docs", [])
-    temperature = float(data.get("temperature", 0.2))
-    max_tokens = int(data.get("max_tokens", 600))
-
-    lines: List[str] = []
-    citations: List[Dict[str, Any]] = []
-
-    for idx, doc in enumerate(docs, start=1):
-        sid = f"S{idx}"
-        meta = doc.metadata or {}
-        text = doc.page_content or ""
-        max_snippet = meta.get("max_snippet_chars")
-        try:
-            max_snippet = int(max_snippet) if max_snippet is not None else None
-        except (TypeError, ValueError):
-            max_snippet = None
-        if max_snippet is None or max_snippet <= 0:
-            max_snippet = 1400
-        snippet = text
-        if len(snippet) > max_snippet:
-            snippet = snippet[:max_snippet] + "…"
-
-        title = meta.get("title") or meta.get("doc_id") or "Source"
-        doc_id = meta.get("doc_id") or ""
-        year = meta.get("year")
-        page = _normalize_page(meta.get("page"))
-
-        parts: List[str] = []
-        if doc_id:
-            parts.append(doc_id)
-        if year not in (None, ""):
-            parts.append(str(year))
-        if page not in (None, ""):
-            parts.append(f"p.{page}")
-        suffix = f" ({', '.join(parts)})" if parts else ""
-
-        lines.append(f"[{sid}] {title}{suffix}: {snippet}")
-
-        citations.append(
-            {
-                "sid": sid,
-                "doc_id": doc_id,
-                "title": meta.get("title"),
-                "year": year,
-                "page": page,
-                "score": meta.get("score"),
-                "faiss_score": meta.get("faiss_score"),
-                "rerank_score": meta.get("rerank_score"),
-                "chunk_indices": meta.get("chunk_indices"),
-                "cosine": meta.get("faiss_score"),
-                "snippet": snippet,
-                "url": meta.get("url"),
-                "rel_path": meta.get("rel_path") or meta.get("filename"),
-                "source_url": meta.get("source_url"),
-                "filename": meta.get("filename"),
-            }
-        )
-
-    sources_block = "\n".join(lines) if lines else "(no sources)"
-    user_prompt = (
-        f"Question:\n{question}\n\n"
-        f"Source Passages:\n{sources_block}\n\n"
-        "Write the answer now. Follow the Rules and include inline [S#] citations."
-    )
-
-    return {
-        "system": SYSTEM_PROMPT,
-        "user": user_prompt,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "citations": citations,
-    }
-
-
-def _call_llm(llm, *, use_langchain_chat: bool = False):
-    if use_langchain_chat:
-        try:
-            from langchain.schema import HumanMessage, SystemMessage
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("langchain schema package missing; install langchain-core.") from exc
-
-        def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
-            temperature = float(inputs.get("temperature", 0.2))
-            max_tokens = int(inputs.get("max_tokens", 600))
-            messages = [
-                SystemMessage(content=inputs.get("system", SYSTEM_PROMPT)),
-                HumanMessage(content=inputs["user"]),
-            ]
-            response = llm.invoke(
-                messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            usage: Dict[str, Any] = {}
-            metadata = getattr(response, "response_metadata", {}) or {}
-            for key in ("token_usage", "usage"):
-                if key in metadata and metadata[key]:
-                    usage = metadata[key]
-                    break
-            if not usage:
-                usage = getattr(response, "additional_kwargs", {}).get("usage", {}) if hasattr(response, "additional_kwargs") else {}
-            return {"answer": getattr(response, "content", ""), "usage": usage}
-
-        return RunnableLambda(_inner)
-
+def _structured_chat_runnable(chat_llm):
     def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
-        answer, usage = llm.chat(
-            inputs.get("system", SYSTEM_PROMPT),
-            inputs["user"],
-            float(inputs.get("temperature", 0.2)),
-            int(inputs.get("max_tokens", 600)),
-        )
-        return {"answer": answer, "usage": usage}
+        messages = inputs.get("messages")
+        if not messages:
+            raise ValueError("messages missing for structured chat runnable")
+        temperature = float(inputs.get("temperature", 0.2))
+        max_tokens = int(inputs.get("max_tokens", 600))
+        response = chat_llm.invoke(messages, temperature=temperature, max_tokens=max_tokens)
+        usage = extract_usage(response)
+        raw_text = message_to_text(response)
+        try:
+            payload = json.loads(raw_text)
+            structured = StructuredAnswer(**payload)
+        except (json.JSONDecodeError, ValidationError) as exc:  # pragma: no cover - parser guard
+            raise ValueError("Structured response parsing failed") from exc
+        return {"structured": structured, "usage": usage, "raw": raw_text}
+
+    return RunnableLambda(_inner)
+
+
+def _chat_plain_runnable(chat_llm):
+    def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        messages = inputs.get("messages")
+        if not messages:
+            raise ValueError("messages missing for chat fallback")
+        temperature = float(inputs.get("temperature", 0.2))
+        max_tokens = int(inputs.get("max_tokens", 600))
+        response = chat_llm.invoke(messages, temperature=temperature, max_tokens=max_tokens)
+        usage = extract_usage(response)
+        text = message_to_text(response)
+        return {"structured": None, "usage": usage, "answer": text, "raw": text}
+
+    return RunnableLambda(_inner)
+
+
+def _adapter_llm_runnable(llm):
+    def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        question = inputs.get("question", "")
+        sources_block = inputs.get("sources_block", "")
+        temperature = float(inputs.get("temperature", 0.2))
+        max_tokens = int(inputs.get("max_tokens", 600))
+        user_prompt = USER_PROMPT_TEMPLATE.format(question=question, sources=sources_block)
+        answer, usage = llm.chat(SYSTEM_PROMPT, user_prompt, temperature, max_tokens)
+        return {"structured": None, "usage": usage, "answer": answer, "raw": answer}
+
+    return RunnableLambda(_inner)
+
+
+def _native_pipeline_runnable(pipeline: QAPipeline, default_k: int):
+    def _inner(inputs: Dict[str, Any]) -> Dict[str, Any]:
+        question = inputs.get("question", "")
+        temperature = float(inputs.get("temperature", 0.2))
+        max_tokens = int(inputs.get("max_tokens", 600))
+        k_raw = inputs.get("k", default_k)
+        try:
+            k_val = int(k_raw) if k_raw is not None else default_k
+        except (TypeError, ValueError):
+            k_val = default_k
+        result = pipeline.ask(question, k=k_val, temperature=temperature, max_tokens=max_tokens)
+        answer_text = str(result.get("answer", "") or "")
+        if "\nSources:\n" in answer_text:
+            answer_main = answer_text.split("\nSources:\n", 1)[0].strip()
+        else:
+            answer_main = answer_text.strip()
+        return {
+            "structured": None,
+            "usage": result.get("usage"),
+            "answer": answer_main,
+            "raw": answer_text,
+            "citations_override": result.get("sources", []),
+        }
 
     return RunnableLambda(_inner)
 
@@ -244,6 +196,10 @@ def build_chain(
     use_multiquery: bool = False,
     use_compression: bool = False,
     llm_config: Optional[Dict[str, Any]] = None,
+    candidate_limit: Optional[int] = None,
+    candidate_multiplier: int = 8,
+    candidate_min: int = 32,
+    candidate_overfetch_factor: float = 1.6,
 ) -> Runnable:
     filters = filters or {}
     langchain_cfg = llm_config or {}
@@ -252,8 +208,12 @@ def build_chain(
     if isinstance(langchain_cfg, dict):
         chat_cfg = langchain_cfg.get("chat_openai", {}) or {}
         use_chat_openai = bool(langchain_cfg.get("use_chat_openai"))
+    env_use_chat = os.environ.get("LC_USE_CHAT_OPENAI")
+    if env_use_chat is not None:
+        use_chat_openai = env_use_chat.strip().lower() in {"1", "true", "yes", "on"}
 
     chat_llm = None
+    backup_chat_llm = None
     if use_chat_openai:
         try:
             from langchain_openai import ChatOpenAI
@@ -292,6 +252,13 @@ def build_chain(
 
         params = {k: v for k, v in params.items() if v is not None}
         chat_llm = ChatOpenAI(**params)
+        backup_model_name = chat_cfg.get("backup_model") or os.environ.get("LC_CHAT_BACKUP_MODEL")
+        if backup_model_name:
+            backup_params = dict(params)
+            backup_params["model"] = backup_model_name
+            backup_chat_llm = ChatOpenAI(**backup_params)
+
+    native_pipeline = QAPipeline(emb, store, reranker, llm)
 
     if not k:
         k = 6
@@ -340,16 +307,28 @@ def build_chain(
             rerank_topn = int(getattr(reranker, "topn"))
         except (TypeError, ValueError):
             rerank_topn = None
+    candidate_multiplier = max(1, int(candidate_multiplier)) if candidate_multiplier is not None else 8
+    candidate_min = max(1, int(candidate_min)) if candidate_min is not None else 32
+    try:
+        candidate_overfetch_factor = float(candidate_overfetch_factor)
+    except (TypeError, ValueError):
+        candidate_overfetch_factor = 1.6
+    if candidate_overfetch_factor <= 0:
+        candidate_overfetch_factor = 1.6
 
-    candidate_limit = max(k * 5, rerank_topn) if rerank_topn else k * 5
+    computed_candidate = candidate_limit if candidate_limit else max(k * candidate_multiplier, candidate_min)
+    if rerank_topn:
+        computed_candidate = max(computed_candidate, rerank_topn)
+    computed_candidate = max(computed_candidate, k)
 
     base_retriever_obj = PortsRetriever(
         store=store,
-        top_k=candidate_limit,
+        top_k=computed_candidate,
         neighbors=neighbors,
         contains=contains,
         year_range=year_range,
         diversify_per_doc=diversify_flag,
+        candidate_overfetch_factor=candidate_overfetch_factor,
     )
     retriever: Runnable = base_retriever_obj
 
@@ -403,14 +382,32 @@ def build_chain(
         reranker=reranker if use_rerank and reranker else None,
         base_retriever=base_retriever_obj,
         default_k=k,
-        candidate_limit=candidate_limit,
+        candidate_limit=computed_candidate,
     )
 
-    llm_to_use = chat_llm if chat_llm is not None else llm
-    llm_runnable: Runnable = _TimedRunnable(
-        "llm",
-        _call_llm(llm_to_use, use_langchain_chat=chat_llm is not None),
-    )
+    adapter_runnable = _adapter_llm_runnable(llm)
+    pipeline_fallback = _native_pipeline_runnable(native_pipeline, k)
+
+    if chat_llm is not None:
+        fallback_runnables: List[Runnable] = []
+        if backup_chat_llm is not None:
+            fallback_runnables.append(_structured_chat_runnable(backup_chat_llm))
+        fallback_runnables.append(_chat_plain_runnable(chat_llm))
+        if backup_chat_llm is not None:
+            fallback_runnables.append(_chat_plain_runnable(backup_chat_llm))
+        fallback_runnables.append(adapter_runnable)
+        fallback_runnables.append(pipeline_fallback)
+        llm_core = RunnableWithFallbacks(
+            runnable=_structured_chat_runnable(chat_llm),
+            fallbacks=fallback_runnables,
+        )
+    else:
+        llm_core = RunnableWithFallbacks(
+            runnable=adapter_runnable,
+            fallbacks=[pipeline_fallback],
+        )
+
+    llm_runnable: Runnable = _TimedRunnable("llm", llm_core)
 
     chain = (
         RunnableLambda(_init_timeline)
@@ -419,8 +416,10 @@ def build_chain(
             "docs": retrieval_runner,
             "temperature": RunnableLambda(lambda x: x.get("temperature", 0.2)),
             "max_tokens": RunnableLambda(lambda x: x.get("max_tokens", 600)),
+            "k": RunnableLambda(lambda x: x.get("k")),
         }
-        | RunnableLambda(_prepare_payload)
+        | RunnableLambda(prepare_prompt_state)
+        | RunnableLambda(lambda state: {**state, "messages": build_prompt_messages(state)})
         | {
             "llm": llm_runnable,
             "citations": RunnableLambda(lambda x: x["citations"]),
@@ -541,12 +540,34 @@ class _RetrievalRunnable(Runnable):
         timing = getattr(self._base_retriever, "_last_timing", {})
         rerank_ms = 0.0
         rerank_batches = 0
-        print(f"[lc.debug] candidates_before_rerank={len(docs)}")
+        candidate_count_val = timing.get("candidate_count")
+        try:
+            candidate_count = int(candidate_count_val)
+        except (TypeError, ValueError):
+            candidate_count = len(docs) if docs else 0
+        candidate_limit_val = timing.get("candidate_limit", self._candidate_limit)
+        try:
+            candidate_limit = int(candidate_limit_val)
+        except (TypeError, ValueError):
+            candidate_limit = self._candidate_limit
+        overfetch_val = timing.get("overfetch")
+        try:
+            overfetch = int(overfetch_val)
+        except (TypeError, ValueError):
+            overfetch = overfetch_val
+        print(
+            f"[lc.debug] candidates_before_rerank={candidate_count} "
+            f"limit={candidate_limit} overfetch={overfetch}"
+        )
         if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
             rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
             rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
-            print(f"[lc.debug] after_rerank={len(docs)}")
+            print(
+                f"[lc.debug] after_rerank={len(docs)} "
+                f"rerank_topn={getattr(self.reranker, 'topn', None)} "
+                f"truncate={getattr(self.reranker, 'truncate_chars', None)}"
+            )
         docs = docs[: self._default_k]
         print(f"[lc.debug] final_k={len(docs)}")
         ann_ms = timing.get("ann_ms", 0.0)
@@ -563,7 +584,8 @@ class _RetrievalRunnable(Runnable):
         }
         self._last_summary = summary
         print(
-            f"[lc.qa] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
+            f"[lc.qa] candidates={candidate_count} limit={candidate_limit} "
+            f"ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
             f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
         )
         return docs
@@ -573,12 +595,34 @@ class _RetrievalRunnable(Runnable):
         timing = getattr(self._base_retriever, "_last_timing", {})
         rerank_ms = 0.0
         rerank_batches = 0
-        print(f"[lc.debug] candidates_before_rerank={len(docs)}")
+        candidate_count_val = timing.get("candidate_count")
+        try:
+            candidate_count = int(candidate_count_val)
+        except (TypeError, ValueError):
+            candidate_count = len(docs) if docs else 0
+        candidate_limit_val = timing.get("candidate_limit", self._candidate_limit)
+        try:
+            candidate_limit = int(candidate_limit_val)
+        except (TypeError, ValueError):
+            candidate_limit = self._candidate_limit
+        overfetch_val = timing.get("overfetch")
+        try:
+            overfetch = int(overfetch_val)
+        except (TypeError, ValueError):
+            overfetch = overfetch_val
+        print(
+            f"[lc.debug] candidates_before_rerank={candidate_count} "
+            f"limit={candidate_limit} overfetch={overfetch}"
+        )
         if self._should_rerank(input):
             docs = self._apply_rerank(input, docs)
             rerank_ms = getattr(self.reranker, "last_run_ms", 0.0) if self.reranker else 0.0
             rerank_batches = getattr(self.reranker, "last_batches", 0) if self.reranker else 0
-            print(f"[lc.debug] after_rerank={len(docs)}")
+            print(
+                f"[lc.debug] after_rerank={len(docs)} "
+                f"rerank_topn={getattr(self.reranker, 'topn', None)} "
+                f"truncate={getattr(self.reranker, 'truncate_chars', None)}"
+            )
         docs = docs[: self._default_k]
         print(f"[lc.debug] final_k={len(docs)}")
         ann_ms = timing.get("ann_ms", 0.0)
@@ -595,7 +639,8 @@ class _RetrievalRunnable(Runnable):
         }
         self._last_summary = summary
         print(
-            f"[lc.qa] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
+            f"[lc.qa] candidates={candidate_count} limit={candidate_limit} "
+            f"ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
             f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
         )
         return docs
@@ -603,9 +648,58 @@ class _RetrievalRunnable(Runnable):
 
 def _finalize_output(out: Dict[str, Any]) -> Dict[str, Any]:
     llm_out = out.get("llm", {}) if isinstance(out, dict) else {}
+    citations = llm_out.get("citations_override")
+    if not citations:
+        citations = out.get("citations", [])
+    citations = citations or []
+
+    structured = llm_out.get("structured")
+    answer_body = ""
+    if isinstance(structured, StructuredAnswer):
+        answer_body = format_structured_answer(structured)
+        cited_ids = {sid.strip() for sid in structured.cited_sources if isinstance(sid, str)}
+        if cited_ids:
+            filtered = [c for c in citations if (c.get("sid") or "").strip() in cited_ids]
+            if filtered:
+                citations = filtered
+    else:
+        answer_body = str(llm_out.get("answer", "") or "").strip()
+
+    answer_body = answer_body.strip()
+
+    sources_lines: List[str] = []
+    for cit in citations:
+        sid = cit.get("sid") or ""
+        title = cit.get("title") or cit.get("doc_id") or "Source"
+        year = cit.get("year")
+        page = cit.get("page")
+        doc_id = cit.get("doc_id")
+        url = cit.get("url")
+
+        bits: List[str] = []
+        if year not in (None, ""):
+            bits.append(str(year))
+        if page not in (None, ""):
+            bits.append(f"p.{page}")
+        if doc_id:
+            bits.append(doc_id)
+
+        suffix = f" ({', '.join(bits)})" if bits else ""
+        line = f"{sid} — {title}{suffix}".strip()
+        if url:
+            line = f"{line} — {url}"
+        sources_lines.append(line)
+
+    if sources_lines:
+        sources_text = "\n".join(f"- {line}" for line in sources_lines)
+        answer_text = answer_body + ("\n\n" if answer_body else "")
+        answer_text += f"Sources:\n{sources_text}"
+    else:
+        answer_text = answer_body or "I could not assemble an answer from the retrieved sources."
+
     return {
-        "answer": llm_out.get("answer", ""),
+        "answer": answer_text,
         "usage": llm_out.get("usage"),
-        "citations": out.get("citations", []),
+        "citations": citations,
         "timings": _consume_timeline(),
     }

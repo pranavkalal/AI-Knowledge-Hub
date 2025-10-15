@@ -81,7 +81,7 @@ def build_pipeline(cfg_path: str = None):
     If orchestrator=langchain in config, returns a thin wrapper around a LangChain chain.
     Otherwise returns the native QAPipeline.
     """
-    cfg_path = cfg_path or os.environ.get("COTTON_RUNTIME", "configs/runtime.openai.yaml")
+    cfg_path = cfg_path or os.environ.get("COTTON_RUNTIME", "configs/runtime/openai.yaml")
     cfg = _load_cfg(cfg_path)
 
     # ---------------- Embeddings ----------------
@@ -169,7 +169,7 @@ def build_pipeline(cfg_path: str = None):
         except Exception as e:
             raise RuntimeError(
                 "orchestrator=langchain but rag.chain.build_chain is unavailable. "
-                "Install langchain and add rag/langchain_adapters.py + rag/chain.py."
+                "Install langchain and ensure rag/retrievers/ + rag/chain.py are present."
             ) from e
 
         # Retrieval knobs
@@ -191,6 +191,89 @@ def build_pipeline(cfg_path: str = None):
         use_rerank = bool(r_cfg.get("rerank", True))
         use_multiquery = bool(r_cfg.get("use_multiquery", False))
         use_compression = bool(r_cfg.get("use_compression", False))
+        env_multiquery = os.environ.get("LC_USE_MULTIQUERY")
+        if env_multiquery is not None:
+            use_multiquery = env_multiquery.strip().lower() in {"1", "true", "yes", "on"}
+        env_compression = os.environ.get("LC_USE_COMPRESSION")
+        if env_compression is not None:
+            use_compression = env_compression.strip().lower() in {"1", "true", "yes", "on"}
+        candidate_limit_cfg = r_cfg.get("candidate_limit")
+        candidate_multiplier_cfg = r_cfg.get("candidate_multiplier")
+        candidate_min_cfg = r_cfg.get("candidate_min") or r_cfg.get("candidate_pool_min")
+        candidate_overfetch_factor_cfg = r_cfg.get("candidate_overfetch_factor")
+
+        candidate_limit_override = None
+        if candidate_limit_cfg is not None:
+            try:
+                candidate_limit_override = int(candidate_limit_cfg)
+            except (TypeError, ValueError):
+                candidate_limit_override = None
+        env_candidate_limit = os.environ.get("LC_CANDIDATE_LIMIT")
+        if env_candidate_limit is not None:
+            try:
+                candidate_limit_override = int(env_candidate_limit)
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            candidate_multiplier_val = int(candidate_multiplier_cfg) if candidate_multiplier_cfg is not None else 8
+        except (TypeError, ValueError):
+            candidate_multiplier_val = 8
+        if candidate_multiplier_val <= 0:
+            candidate_multiplier_val = 8
+        env_candidate_multiplier = os.environ.get("LC_CANDIDATE_MULTIPLIER")
+        if env_candidate_multiplier is not None:
+            try:
+                env_mult = int(env_candidate_multiplier)
+            except (TypeError, ValueError):
+                env_mult = None
+            if env_mult and env_mult > 0:
+                candidate_multiplier_val = env_mult
+
+        try:
+            candidate_min_val = int(candidate_min_cfg) if candidate_min_cfg is not None else 32
+        except (TypeError, ValueError):
+            candidate_min_val = 32
+        if candidate_min_val <= 0:
+            candidate_min_val = k
+        env_candidate_min = os.environ.get("LC_CANDIDATE_MIN")
+        if env_candidate_min is not None:
+            try:
+                env_min = int(env_candidate_min)
+            except (TypeError, ValueError):
+                env_min = None
+            if env_min and env_min > 0:
+                candidate_min_val = env_min
+
+        try:
+            candidate_overfetch_factor_val = float(candidate_overfetch_factor_cfg) if candidate_overfetch_factor_cfg is not None else 1.6
+        except (TypeError, ValueError):
+            candidate_overfetch_factor_val = 1.6
+        if candidate_overfetch_factor_val <= 0:
+            candidate_overfetch_factor_val = 1.6
+        env_candidate_overfetch = os.environ.get("LC_CANDIDATE_OVERFETCH_FACTOR")
+        if env_candidate_overfetch is not None:
+            try:
+                env_factor = float(env_candidate_overfetch)
+            except (TypeError, ValueError):
+                env_factor = None
+            if env_factor and env_factor > 0:
+                candidate_overfetch_factor_val = env_factor
+
+        rerank_topn_val = None
+        if hasattr(reranker, "topn"):
+            try:
+                rerank_topn_val = int(getattr(reranker, "topn"))
+            except (TypeError, ValueError):
+                rerank_topn_val = None
+
+        if candidate_limit_override is not None and candidate_limit_override <= 0:
+            candidate_limit_override = None
+
+        computed_candidate_limit = candidate_limit_override or max(k * candidate_multiplier_val, candidate_min_val)
+        if rerank_topn_val:
+            computed_candidate_limit = max(computed_candidate_limit, rerank_topn_val)
+        computed_candidate_limit = max(computed_candidate_limit, k)
 
         chain = build_chain(
             emb=emb,
@@ -204,15 +287,29 @@ def build_pipeline(cfg_path: str = None):
             use_multiquery=use_multiquery,
             use_compression=use_compression,
             llm_config=langchain_cfg,
+            candidate_limit=candidate_limit_override,
+            candidate_multiplier=candidate_multiplier_val,
+            candidate_min=candidate_min_val,
+            candidate_overfetch_factor=candidate_overfetch_factor_val,
         )
         stream_enabled = bool(langchain_cfg.get("stream", False))
 
         class LangChainWrapper:
             """Expose helpers for sync and streamed answers."""
 
-            def __init__(self, chain, stream_enabled: bool):
+            def __init__(self, chain, stream_enabled: bool, default_candidate_limit: int, candidate_overfetch_factor: float):
                 self.chain = chain
                 self.stream_enabled = stream_enabled
+                try:
+                    self.default_candidate_limit = max(1, int(default_candidate_limit))
+                except (TypeError, ValueError):
+                    self.default_candidate_limit = max(1, k)
+                try:
+                    self.default_overfetch_factor = float(candidate_overfetch_factor)
+                except (TypeError, ValueError):
+                    self.default_overfetch_factor = 1.6
+                if self.default_overfetch_factor <= 0:
+                    self.default_overfetch_factor = 1.6
 
             @staticmethod
             def _coerce_filters(value: Any) -> Any:
@@ -237,7 +334,10 @@ def build_pipeline(cfg_path: str = None):
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                 }
-                numeric_keys = {"k", "neighbors", "per_doc", "max_tokens", "max_preview_chars", "max_snippet_chars"}
+                payload.setdefault("candidate_limit", self.default_candidate_limit)
+                payload.setdefault("candidate_overfetch_factor", self.default_overfetch_factor)
+                numeric_keys = {"k", "neighbors", "per_doc", "max_tokens", "max_preview_chars", "max_snippet_chars", "candidate_limit"}
+                float_keys = {"candidate_overfetch_factor"}
                 for key, raw_value in extra.items():
                     if raw_value is None:
                         continue
@@ -259,6 +359,15 @@ def build_pipeline(cfg_path: str = None):
                             value = max(100, value)
                         elif key == "max_snippet_chars":
                             value = max(100, value)
+                        elif key == "candidate_limit":
+                            value = max(1, value)
+                    elif key in float_keys:
+                        try:
+                            value = float(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if key == "candidate_overfetch_factor" and value <= 0:
+                            value = self.default_overfetch_factor
                     payload[key] = value
                 return payload
 
@@ -329,7 +438,12 @@ def build_pipeline(cfg_path: str = None):
                         yield {"type": "final", "output": output}
                         return
 
-        return LangChainWrapper(chain, stream_enabled)
+        return LangChainWrapper(
+            chain,
+            stream_enabled,
+            default_candidate_limit=computed_candidate_limit,
+            candidate_overfetch_factor=candidate_overfetch_factor_val,
+        )
 
     # Default: native pipeline
     return QAPipeline(emb, store, reranker, llm)

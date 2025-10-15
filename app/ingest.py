@@ -27,7 +27,7 @@ def load_skip_ids():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="configs/ingestion.yaml")
+    ap.add_argument("--config", default="configs/ingestion/default.yaml")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)

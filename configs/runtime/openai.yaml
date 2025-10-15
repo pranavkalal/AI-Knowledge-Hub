@@ -1,4 +1,3 @@
-# configs/runtime.openai.yaml
 # Opinionated preset for running the Knowledge Hub with OpenAI embeddings
 # and LangChain orchestration. Point COTTON_RUNTIME at this file to enable it.
 

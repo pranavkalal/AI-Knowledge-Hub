@@ -101,3 +101,24 @@ Example Query
 ```bash
 invoke query -q "How does soil management affect water use efficiency?"
 ```
+
+### LangChain Retrieval Controls
+
+- **Candidate pool** is controlled via `retrieval.candidate_multiplier`, `candidate_min`, and `candidate_overfetch_factor` in `configs/runtime/default.yaml`. Set `retrieval.candidate_limit` to hard-cap the pool.  
+- Toggle rewrites and compression with `retrieval.use_multiquery` / `retrieval.use_compression`.  
+- Runtime overrides from `.env` / shell:
+  - `LC_USE_MULTIQUERY=1` or `LC_USE_COMPRESSION=1`
+  - `LC_CANDIDATE_LIMIT`, `LC_CANDIDATE_MULTIPLIER`, `LC_CANDIDATE_MIN`, `LC_CANDIDATE_OVERFETCH_FACTOR`
+  - `LC_USE_CHAT_OPENAI=1` and optional `LC_CHAT_BACKUP_MODEL=gpt-4o-mini`
+
+When `langchain.use_chat_openai` is true, the chain now wraps ChatOpenAI in automatic fallbacks (`backup_model` → adapter LLM → native `QAPipeline`) so rate-limit spikes degrade gracefully. See `docs/orchestration.md` for a deeper walkthrough of the prompt schema and fallback graph.
+
+### Regression Guardrail
+
+Compare retrieval accuracy/latency before and after a change using the new Invoke task:
+
+```bash
+invoke regress-langchain --after configs/runtime/default.yaml --out reports/regression.json
+```
+
+By default the task uses `configs/runtime/openai.yaml` as the baseline and the current `COTTON_RUNTIME` as the candidate. The underlying script (`scripts/retrieval/regress.py`) emits hit-rate, MRR, precision@1, stage timings, and delta values.

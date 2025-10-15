@@ -26,8 +26,8 @@ API_PORT = int(os.environ.get("PORT", "8000"))
 UI_PORT = int(os.environ.get("UI_PORT", "8501"))
 API_BASE = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
 
-RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime.openai.yaml"))
-OPENAI_RUNTIME_CFG = Path("configs/runtime.openai.yaml")
+RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime/openai.yaml"))
+OPENAI_RUNTIME_CFG = Path("configs/runtime/openai.yaml")
 _RUNTIME_CACHE: dict | None = None
 
 
@@ -103,7 +103,7 @@ LLM_MODEL = _resolve_llm_model()
 
 # Paths
 RAW_DIR    = Path("data/raw")
-INGEST_CFG = Path("configs/ingestion.yaml")
+INGEST_CFG = Path("configs/ingestion/default.yaml")
 DOCS       = Path("data/staging/docs.jsonl")
 CLEANED    = Path("data/staging/cleaned.jsonl")
 CHUNKS     = Path("data/staging/chunks.jsonl")
@@ -145,7 +145,7 @@ def _assert_nonempty(label: str, path: Path, hint: str):
 def ingest(c, config=None):
     """
     Crawl + extract → write docs.jsonl using YAML config.
-    Default: configs/ingestion.yaml; override with --config path/to/file.yaml
+    Default: configs/ingestion/default.yaml; override with --config path/to/file.yaml
     """
     cfg = Path(config) if config else INGEST_CFG
     if not cfg.exists():
@@ -306,7 +306,7 @@ def eval_extract(c):
     _run(f'{PY} -m app.extraction_eval')
 
 @task
-def eval_retrieval(c, cfg="configs/runtime.openai.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
+def eval_retrieval(c, cfg="configs/runtime/openai.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
     """Evaluate retrieval metrics for native vs LangChain orchestrators."""
     _run(f'{PY} -m scripts.eval_retrieval --cfg {cfg} --q {q} --k {k}')
 
@@ -325,6 +325,27 @@ def clobber(c):
         if Path(p).exists():
             Path(p).unlink()
             print("deleted", p)
+
+
+@task(name="regress-langchain")
+def regress_langchain(c, before=None, after=None, queries="eval/gold/gold_ai_knowledge_hub.jsonl", k=None, out=None):
+    """
+    Compare retrieval hit-rate/latency between two runtime configs.
+    Defaults: before=configs/runtime/openai.yaml, after=current COTTON_RUNTIME.
+    """
+    before_cfg = Path(before) if before else OPENAI_RUNTIME_CFG
+    after_cfg = Path(after) if after else RUNTIME_CFG
+    cmd = (
+        f"{PY} -m scripts.retrieval.regress "
+        f"--before {before_cfg} "
+        f"--after {after_cfg} "
+        f"--queries {queries}"
+    )
+    if k is not None:
+        cmd += f" --k {k}"
+    if out is not None:
+        cmd += f" --out {out}"
+    _run(cmd)
 
 @task
 def rebuild(c):

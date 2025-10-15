@@ -110,6 +110,10 @@ class OpenAIRerankerAdapter(RerankerPort):
         self.last_run_ms = float(elapsed)
         self.last_candidates = len(candidates)
         self.last_batches = ceil(len(candidates) / max(1, len(candidates)))  # embeddings endpoint handles batch
+        print(
+            f"[rerank.openai] pool={len(hits)} scored={self.last_candidates} "
+            f"topn={self.topn} truncate={self.truncate_chars} elapsed={self.last_run_ms:.1f}ms"
+        )
 
         reranked: List[dict] = []
         for hit, score in zip(candidates, scores.tolist()):

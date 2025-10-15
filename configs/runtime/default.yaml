@@ -1,7 +1,5 @@
-# configs/runtime.yaml
-# Master runtime configuration for the Knowledge Hub pipeline.
+# Default runtime configuration for the Knowledge Hub pipeline.
 # - Switch orchestrators between native and LangChain via 'orchestrator'.
-# - Update adapters/models here instead of touching source code.
 # - Retriever options (filters, multi-query, compression) live under 'retrieval'.
 # - LangChain-specific toggles (tracing, streaming callbacks) live under 'langchain'.
 
@@ -50,7 +48,18 @@ retrieval:
 
   use_multiquery: false
   use_compression: false
+  candidate_multiplier: 8          # candidate pool multiplier relative to k
+  candidate_min: 48                # minimum candidate pool size (before rerank)
+  candidate_overfetch_factor: 1.6  # controls additional search_raw overfetch scale
+  # candidate_limit: 64            # uncomment to force a hard ceiling for candidates
 
 langchain:
   trace: true
   stream: false
+  use_chat_openai: false
+  chat_openai:
+    model: gpt-4o-mini
+    backup_model: null             # optional secondary model for fallback
+    max_tokens: 900
+    max_retries: 2
+    timeout: 30

@@ -17,26 +17,26 @@
 | rag/segment/ | chunker.py | Token-aware chunking and offset bookkeeping |
 | rag/embed/ | embedder.py | SentenceTransformer wrapper used by embedding adapter |
 | rag/retrieval/ | utils.py; pdf_links.py | Retrieval filters, preview stitching, and PDF filename resolution |
-| scripts/ | build_embeddings.py; build_faiss.py; query_faiss.py; eval_retrieval.py | Offline batch jobs for embeddings/index, FAISS query CLI, and retrieval evaluation |
+| scripts/ | build/ (faiss.py); retrieval/ (regress.py); build_embeddings.py; query_faiss.py; eval_retrieval.py | Offline batch jobs for embeddings/index, regression harness, FAISS query CLI, and retrieval evaluation |
 | store/ | store_faiss.py | Thin persistence wrapper around `faiss.IndexFlatIP` |
 | ui/ | streamlit_app.py | Streamlit UX for asking questions and debugging retrieval |
-| configs/ | ingestion.yaml; runtime.yaml | Ingestion seeds and runtime configuration for orchestrator/adapters |
-| tests/ | test_pipeline_parity.py; test_lc_ports_retriever.py; test_query_cli.py; chunk_stats.py | Regression tests for pipeline parity, LC retriever behavior, CLI output, and chunk statistics utility |
+| configs/ | ingestion/default.yaml; runtime/default.yaml; runtime/openai.yaml | Ingestion seeds and runtime configuration for orchestrator/adapters |
+| tests/ | langchain/test_pipeline_parity.py; langchain/test_ports_retriever.py; test_query_cli.py; chunk_stats.py | Regression tests for pipeline parity, LC retriever behavior, CLI output, and chunk statistics utility |
 
 ## End-to-End Pipeline
-1. **Discover & ingest PDFs** — `app/ingest.py` loads `configs/ingestion.yaml`, uses `rag.ingest_lib.*` to crawl seed URLs, download PDFs into `data/raw/`, and emit document-level `data/staging/docs.jsonl` plus `docs.csv`.
+1. **Discover & ingest PDFs** — `app/ingest.py` loads `configs/ingestion/default.yaml`, uses `rag.ingest_lib.*` to crawl seed URLs, download PDFs into `data/raw/`, and emit document-level `data/staging/docs.jsonl` plus `docs.csv`.
 2. **Document cleaning (optional)** — `app/clean_extract.py` with `rag.extract.pipeline.clean_records` normalises text and filters short documents into `data/staging/cleaned.jsonl`.
 3. **Chunking** — `app/chunk.py` and `rag.segment.chunker` tokenise and window content into overlapping records stored in `data/staging/chunks.jsonl`.
 4. **Embedding build** — `scripts/build_embeddings.py` reuses `BGEEmbeddingAdapter` to encode chunks into `data/embeddings/embeddings.npy` with aligned `ids.npy`.
-5. **Vector index** — `scripts/build_faiss.py` and `store.store_faiss.FaissFlatIP` convert embeddings into `data/embeddings/vectors.faiss`.
-6. **Serving pipeline** — `app.factory.build_pipeline` wires adapters per `configs/runtime.openai.yaml`, returning either the native `QAPipeline` (`app/services/qa.py`) or the LangChain graph (`rag/chain.py`).
+5. **Vector index** — `scripts/build/faiss.py` and `store.store_faiss.FaissFlatIP` convert embeddings into `data/embeddings/vectors.faiss`.
+6. **Serving pipeline** — `app.factory.build_pipeline` wires adapters per `configs/runtime/openai.yaml`, returning either the native `QAPipeline` (`app/services/qa.py`) or the LangChain graph (`rag/chain.py`).
 7. **Interfaces** — FastAPI routers in `app/routers/` expose `/api/search` and `/api/ask`; `ui/streamlit_app.py` and CLI utilities (`scripts/query_faiss.py`) consume the same retrieval stack.
 
 ## Data Flow Diagram
 ```
           Seed URLs / PDFs (data/raw)
                    |
-       app.ingest -- configs/ingestion.yaml
+       app.ingest -- configs/ingestion/default.yaml
                    v
          data/staging/docs.jsonl
                    |
@@ -52,7 +52,7 @@
                    v
  data/embeddings/embeddings.npy + data/embeddings/ids.npy
                    |
-   scripts.build_faiss (FaissFlatIP.save)
+ scripts.build.faiss (FaissFlatIP.save)
                    v
         data/embeddings/vectors.faiss
                    |
@@ -66,7 +66,7 @@
 | `make clean-extract` | Run `app.clean_extract` to produce `data/staging/cleaned.jsonl`. |
 | `make chunk` | Execute `app.chunk` with configurable token/overlap settings into `data/staging/chunks.jsonl`. |
 | `make embed` | Build `embeddings.npy` and `ids.npy` via `scripts.build_embeddings`. |
-| `make faiss` | Create `vectors.faiss` from embeddings with `scripts.build_faiss`. |
+| `make faiss` | Create `vectors.faiss` from embeddings with `scripts.build.faiss`. |
 | `make query Q="..."` | Ad-hoc FAISS query using `scripts.query_faiss` with filters/overfetch controls. |
 | `make api` / `make ui` / `make dev` | Launch FastAPI, Streamlit, or both (with auto-shutdown) for local serving. |
 | `make fmt` / `make test` | Run Ruff auto-fix + format, or Pytest suite. |
@@ -86,19 +86,9 @@
 ## Adapter Stack & Configuration
 | Component | Default adapter | Implementation | Config knobs |
 | --- | --- | --- | --- |
-| Embeddings | `bge_local` | `app/adapters/embed_bge.BGEEmbeddingAdapter` wrapping `rag/embed/embedder.py` | `configs/runtime.openai.yaml: embedder.model`, `EMB_MODEL` env var |
-| Vector store | `faiss_local` | `app/adapters/vector_faiss.FaissStoreAdapter` loading `store/store_faiss.FaissFlatIP` | `runtime.yaml: vector_store.path`, `ids`, `meta`; `FAISS_*` env overrides |
-| Reranker | `bge_reranker` (or `none`) | `app/adapters/rerank_bge.BGERerankerAdapter` or `NoopReranker` | `runtime.yaml: reranker.adapter`, `model`; optional `retrieval.rerank` toggle |
-| LLM | `ollama` (default) or `openai` | `app/adapters/llm_ollama.OllamaAdapter` / `llm_openai.OpenAIAdapter` | `runtime.yaml: llm.adapter`, `model`, `temperature`, `max_output_tokens`; `OLLAMA_HOST` / OpenAI env credentials |
-| Orchestrator | `langchain` | `rag/chain.build_chain` (async stream capable) or native `app/services/qa.QAPipeline` | `runtime.yaml: orchestrator`, `retrieval.k/mode/filters`, `langchain.stream/trace` |
-| Retrieval filters | Ports retriever / utilities | `rag/langchain_adapters.PortsRetriever`, `rag/retrieval/utils.prepare_hits` | `runtime.yaml: retrieval.filters`, API query params, env defaults in `app/service/search_service.py` |
-
-## Risky Assumptions & Missing Preconditions
-- `app.factory._require_file` mandates that `data/embeddings/vectors.faiss`, `ids.npy`, and `data/staging/chunks.jsonl` already exist; the API will crash on startup if any artifact is missing or empty.
-- Embedding builds must use the same model (and normalisation settings) configured at runtime; changing `embedder.model` without regenerating `embeddings.npy` yields meaningless similarity scores.
-- `OllamaAdapter` assumes an Ollama daemon reachable at `OLLAMA_HOST` (default `http://localhost:11434`); timeouts surface as generic runtime errors.
-- `OpenAIAdapter` relies on `OPENAI_API_KEY` (and related OpenAI env vars) being set; missing credentials trigger client creation failures at query time.
-- Ingestion scrapers in `rag/ingest_lib.discover` assume current InsideCotton HTML structure and PDF availability; layout changes or rate limits can silently produce zero-doc pipelines.
-- PDF routing (`app/routers/pdf.py`, `rag/retrieval/pdf_links.py`) depends on ingest metadata mapping doc IDs to filenames under `data/raw/`; manual PDF uploads must follow the hashed naming convention or `/pdf` links will 404.
-- `FaissStoreAdapter` eagerly loads chunk metadata into memory; very large corpora may exceed memory limits and lack pagination/back-pressure controls.
-- SentenceTransformer and CrossEncoder models download weights on first use; air-gapped deployments need pre-seeded caches or the embedding/reranker steps will fail.
+| Embeddings | `bge_local` | `app/adapters/embed_bge.BGEEmbeddingAdapter` wrapping `rag/embed/embedder.py` | `configs/runtime/openai.yaml: embedder.model`, `EMB_MODEL` env var |
+| Vector store | `faiss_local` | `app/adapters/vector_faiss.FaissStoreAdapter` loading `store/store_faiss.FaissFlatIP` | `runtime/default.yaml: vector_store.path`, `ids`, `meta`; `FAISS_*` env overrides |
+| Reranker | `bge_reranker` (or `none`) | `app/adapters/rerank_bge.BGERerankerAdapter` or `NoopReranker` | `runtime/default.yaml: reranker.adapter`, `model`; optional `retrieval.rerank` toggle |
+| LLM | `ollama` (default) or `openai` | `app/adapters/llm_ollama.OllamaAdapter` / `llm_openai.OpenAIAdapter` | `runtime/default.yaml: llm.adapter`, `model`, `temperature`, `max_output_tokens`; `OLLAMA_HOST` / OpenAI env credentials |
+| Orchestrator | `langchain` | `rag/chain.build_chain` (async stream capable) or native `app/services/qa.QAPipeline` | `runtime/default.yaml: orchestrator`, `retrieval.k/mode/filters`, `langchain.stream/trace` |
+| Retrieval filters | Ports retriever / utilities | `rag/retrievers.PortsRetriever`, `rag/retrieval/utils.prepare_hits` | `runtime/default.yaml: retrieval.filters`, API query params, env defaults in `app/service/search_service.py` |

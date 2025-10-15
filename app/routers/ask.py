@@ -1,7 +1,7 @@
 """
 /api/ask endpoint: takes a question and returns an answer with source citations.
 Thin FastAPI layer over the QAPipeline or LangChain chain via app.factory.build_pipeline.
-All provider choices live in configs/runtime.yaml.
+All provider choices live in configs/runtime/default.yaml (or the preset referenced by COTTON_RUNTIME).
 """
 
 from time import perf_counter

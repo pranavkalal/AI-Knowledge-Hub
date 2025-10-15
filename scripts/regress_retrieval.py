@@ -1,10 +1,10 @@
 """
 Legacy entry point kept for backwards compatibility.
 
-Delegates to scripts.build.faiss.main().
+Delegates to scripts.retrieval.regress.main().
 """
 
-from scripts.build.faiss import main
+from scripts.retrieval.regress import main
 
 
 if __name__ == "__main__":
