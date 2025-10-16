@@ -681,13 +681,9 @@ def _finalize_output(out: Dict[str, Any]) -> Dict[str, Any]:
             bits.append(str(year))
         if page not in (None, ""):
             bits.append(f"p.{page}")
-        if doc_id:
-            bits.append(doc_id)
 
         suffix = f" ({', '.join(bits)})" if bits else ""
         line = f"{sid} — {title}{suffix}".strip()
-        if url:
-            line = f"{line} — {url}"
         sources_lines.append(line)
 
     if sources_lines:

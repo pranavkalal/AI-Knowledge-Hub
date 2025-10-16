@@ -61,14 +61,23 @@ st.markdown(
     """
     <style>
     .answer-text {
-        font-size: 1.1rem;          /* was 1.1rem  →  roughly +15–20% */
-        line-height: 1.75;           /* a bit more breathing room */
+        font-size: 1.18rem;
+        line-height: 1.7;
     }
     .answer-text ul {
-        padding-left: 1.6rem;        /* extra indent for bullets */
+        padding-left: 1.6rem;
     }
     .answer-text strong {
         font-weight: 600;
+    }
+    .citation-summary {
+        font-size: 0.95rem;
+    }
+    [data-testid="stToolbar"] {
+        visibility: hidden;
+    }
+    header[data-testid="stHeader"] {
+        background: inherit;
     }
     </style>
     """,
@@ -129,22 +138,23 @@ tabs = st.tabs(["Ask (generation)", "Search (debug)"])
 
 def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
     for idx, citation in enumerate(citations, start=1):
-        with st.container(border=True):
-            title = citation.get("title") or "(untitled)"
-            page = citation.get("page")
-            doc_id = citation.get("doc_id", "")
-            span = citation.get("span", "")
-            score = citation.get("score")
+        title = citation.get("title") or "(untitled)"
+        year = citation.get("year")
+        page = citation.get("page")
+        span = citation.get("span", "")
 
-            page_label = f"page {page}" if page else "page —"
-            header = f"**{idx}. {title}** · {page_label}"
-            if score is not None:
-                header += f" · score {round(score, 3)}"
-            st.markdown(header)
+        summary_bits = [title]
+        if year not in (None, ""):
+            summary_bits.append(str(year))
+        if page not in (None, ""):
+            summary_bits.append(f"p. {page}")
+        summary = " — ".join(summary_bits)
 
+        with st.expander(f"{idx}. {summary}", expanded=False):
             if span:
                 truncated = span[:1200]
                 st.write(truncated + ("…" if len(span) > len(truncated) else ""))
+
             links: list[str] = []
             pdf_href = citation.get("url")
             link_label = "Open PDF"
@@ -157,13 +167,8 @@ def _render_citations(citations: Iterable[Dict[str, Any]]) -> None:
             source_href = citation.get("source_url")
             if isinstance(source_href, str) and source_href:
                 links.append(f'<a href="{source_href}" target="_blank" rel="noopener">Source site</a>')
-            rel_path = citation.get("rel_path")
-            footer_parts = [f"`doc_id: {doc_id}`"]
-            if rel_path:
-                footer_parts.append(f"`file: {rel_path}`")
             if links:
                 st.markdown(" · ".join(links), unsafe_allow_html=True)
-            st.caption(" · ".join(footer_parts))
 
 
 # -------- Ask --------

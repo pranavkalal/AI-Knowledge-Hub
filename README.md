@@ -7,18 +7,9 @@
 
 ## Why it matters
 
-- CRDC has decades of PDF research artefacts that are hard to search, quote, or defend in meetings.
-- Scientists need **grounded** answers with citations they can stand behind.
-- The Hub automates ingestion → indexing → retrieval so decisions happen faster than document hunts.
-
----
-
-## Highlights
-
-- **Structured RAG** – LangChain chain with JSON-schema answers, inline `[S#]` citations, and resilient fallbacks (ChatOpenAI → backup → local adapter → native QA pipeline).
-- **Deep retrieval controls** – FAISS dense search with multi-query rewrites, contextual compression, and OpenAI-based reranking. Candidate pool tuning + timing telemetry built in.
-- **Production plumbing** – Invoke tasks, regression harness (`invoke regress-langchain`), and config/env overrides you can ship.
-- **UI + API parity** – Streamlit front end and FastAPI share the same orchestration layer.
+- Growers need practical, evidence-backed insights without trawling hundreds of pages.
+- Researchers must surface the right paragraph, page, and citation to defend recommendations.
+- CRDC teams can focus on decisions, not document hunts, because the hub keeps knowledge stitched together.
 
 ---
 
@@ -47,23 +38,6 @@ invoke dev
 
 ---
 
-## Everyday commands
-
-```bash
-invoke ingest                 # crawl & parse PDFs (configurable)
-invoke chunk                  # chunk docs → staging/chunks.jsonl
-invoke embed                  # build embeddings.npy + ids.npy
-invoke faiss                  # build vectors.faiss index
-invoke query -q "..."         # CLI retrieval check
-invoke regress-langchain      # compare recall/latency before vs after
-```
-
-Runtime tweaks via env:
-- `LC_USE_MULTIQUERY`, `LC_USE_COMPRESSION`, `LC_CANDIDATE_LIMIT`, `LC_CANDIDATE_MULTIPLIER`, `LC_CANDIDATE_MIN`
-- `LC_USE_CHAT_OPENAI`, `LC_CHAT_BACKUP_MODEL`
-
----
-
 ## Tech stack snapshot
 
 | Layer | Tooling | Notes |
@@ -74,9 +48,18 @@ Runtime tweaks via env:
 | Reranker | OpenAI embedding reranker | Pool stats + latency logging |
 | Ingestion | Custom crawler + OCR-ready parsing | YAML-driven sources, skip lists, retry logic |
 | Front end | Streamlit + FastAPI | Shared chain wrapper keeps answers consistent |
+| LLMs | OpenAI Chat models (plus local adapters) | Structured JSON answers, fallback stack |
 | Tooling | Invoke, regression scripts | CI-friendly recall/latency checks |
 
 Chunking stitches neighbour windows so citations provide enough context. Metadata tracks page numbers, file paths, and snippet lengths for prompt construction and future PDF highlighting.
+
+---
+
+## Highlights
+
+- **Structured answers for researchers & growers** – The UI surfaces cited summaries, key points, and conclusions in language stakeholders can act on quickly.
+- **Configurable retrieval depth** – Multi-query expansion, compression, and reranking help surface agronomic nuance buried in long reports.
+- **Traceable answers** – Inline citations jump back to source passages (PDF highlighting planned in the next phase).
 
 ---
 
@@ -84,19 +67,18 @@ Chunking stitches neighbour windows so citations provide enough context. Metadat
 
 | Topic | File |
 |-------|------|
-| System + runtime requirements | `docs/requirements.md`
-| Deployment guide (API, UI, environments) | `docs/deployment.md`
-| Architecture overview | `docs/architecture.md`
-| LangChain orchestration & schema | `docs/orchestration.md`
-| Ingestion pipeline & config keys | `docs/ingestion.md`
-| Evaluation & regression workflows | `docs/evaluation.md`
+| System + runtime requirements | `docs/requirements.md` |
+| Deployment guide (API, UI, environments) | `docs/deployment.md` |
+| Architecture overview | `docs/architecture.md` |
+| LangChain orchestration & schema | `docs/orchestration.md` |
+| Ingestion pipeline & config keys | `docs/ingestion.md` |
+| Evaluation & regression workflows | `docs/evaluation.md` |
 
 ---
 
 ## Next steps
 
-- Clickable citations that open PDFs at the highlighted chunk
-- Robust OCR + layout parsing for table-heavy, two-column reports
-- Multimodal retrieval experiments (images + text)
-
-If you’re evaluating the system or the team behind it, skim the docs above or run `invoke dev` for a quick tour.
+- Evolve from standard dense RAG to **GraphRAG** for richer cross-report reasoning.
+- Plug in structured agronomy data and support multiple personas (researchers, growers, policy teams).
+- Add conversational memory so returning users build on prior sessions.
+- Harden cloud deployment (container images, managed vector DB, observability stack).

@@ -259,6 +259,10 @@ def dev(c, reload=True):
     Ensure index exists, then run API + UI together.
     Works on Windows/macOS/Linux. Ctrl+C in Streamlit will shut down API too.
     """
+    if not RUNTIME_CFG.exists():
+        print(f"[dev] Runtime config {RUNTIME_CFG} missing -> switching to {OPENAI_RUNTIME_CFG}")
+        _switch_runtime_cfg(OPENAI_RUNTIME_CFG)
+
     if not FAISS_IDX.exists():
         print("FAISS index missing → running full build...")
         build(c)
@@ -291,14 +295,6 @@ def dev(c, reload=True):
                     api_proc.kill()
                 except Exception:
                     pass
-
-
-@task(name="dev2")
-def dev_openai(c, reload=True):
-    """Run dev task with OpenAI runtime preset."""
-    _switch_runtime_cfg(OPENAI_RUNTIME_CFG)
-    print(f"[dev2] Using runtime config {RUNTIME_CFG}")
-    dev(c, reload=reload)
 
 @task(name="eval-extract")
 def eval_extract(c):
