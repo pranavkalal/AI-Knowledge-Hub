@@ -1,15 +1,18 @@
-# AI Knowledge Hub
+# Summary
 
-> Retrieval-augmented research assistant for the Cotton Research & Development Corporation (CRDC).
-> Finds, cites, and explains answers hidden inside multi-year technical reports.
+The AI-Enhanced Knowledge Hub for the Australian Cotton Industry is a modular, Retrieval-Augmented Generation (RAG) system designed for the Cotton Research and Development Corporation (CRDC). It ingests decades of cotton research reports, processes them into structured and unstructured data, and enables users to search, ask questions, and generate evidence-based insights through a conversational interface.
 
 ---
 
 ## Why it matters
 
-- Growers need practical, evidence-backed insights without trawling hundreds of pages.
-- Researchers must surface the right paragraph, page, and citation to defend recommendations.
-- CRDC teams can focus on decisions, not document hunts, because the hub keeps knowledge stitched together.
+- CRDC holds over 40 years of Australian cotton research, yet most of it sits locked inside PDFs. Finding relevant insights requires manual search and expert knowledge.
+- This project transforms that archive into a living knowledge system—one that connects data, documents, and AI reasoning to support researchers, policymakers, and growers.
+- By prototyping a secure, explainable, and Microsoft-compatible RAG framework, the team lays groundwork for:
+  - Faster evidence discovery across decades of reports.
+  - Transparent answers with citations to original sources.
+  - Extensible architecture for future integration with graphs, OCR, and Azure AI Search.
+- The result isn’t just an AI chatbot—it’s a step toward data-driven decision-making in sustainable agriculture.
 
 ---
 
