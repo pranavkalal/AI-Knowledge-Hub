@@ -3,19 +3,38 @@ Adapter for FAISS vector store that wraps store/store_faiss.py FaissFlatIP.
 Implements VectorStorePort and reads ids.npy + chunks.jsonl for metadata.
 """
 
-from typing import List, Dict
+from __future__ import annotations
+
+import os
+from typing import List, Dict, Optional, Mapping
 import numpy as np
 import json
+from functools import lru_cache
 from app.ports import VectorStorePort
 from store.store_faiss import FaissFlatIP
 
+
 class FaissStoreAdapter(VectorStorePort):
-    def __init__(self, index_path: str, ids_path: str, meta_path: str = "data/staging/chunks.jsonl"):
+    def __init__(
+        self,
+        index_path: str,
+        ids_path: str,
+        meta_path: str = "data/staging/chunks.jsonl",
+        embed_model: Optional[str] = None,
+        embed_config: Optional[Mapping[str, object]] = None,
+    ):
         # Load your wrapper class (not the raw faiss index)
         self.ff = FaissFlatIP.load(index_path)
         self.ids = np.load(ids_path, allow_pickle=True)
         self.meta_path = meta_path
         self._meta = None
+        self._embed_model = embed_model or os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
+        self._embedder = None
+        self._embed_config: Dict[str, object] = dict(embed_config or {})
+        self._embed_config.setdefault("model", self._embed_model)
+        adapter = self._embed_config.get("adapter") or os.environ.get("EMB_ADAPTER")
+        if adapter:
+            self._embed_config["adapter"] = adapter
 
     def _load_meta(self) -> dict:
         if self._meta is None:
@@ -29,6 +48,20 @@ class FaissStoreAdapter(VectorStorePort):
                     if cid:
                         self._meta[cid] = rec
         return self._meta
+
+    def get_meta_map(self) -> dict:
+        """Expose cached metadata for downstream utilities."""
+        return self._load_meta()
+
+    def get_metadata(self, chunk_id: str) -> dict | None:
+        """Return metadata for a specific chunk id."""
+        return self._load_meta().get(chunk_id)
+
+    @lru_cache(maxsize=1)
+    def _ensure_embedder(self):
+        from app.adapters.loader import load_embedder
+
+        return load_embedder(self._embed_config, os.environ)
 
     def add(self, ids: List[str], vectors: List[List[float]], metadatas: List[Dict]):
         # Index is built offline via scripts/build_faiss.py
@@ -44,5 +77,17 @@ class FaissStoreAdapter(VectorStorePort):
                 continue
             chunk_id = self.ids[idx]
             md = meta.get(chunk_id, {})
-            hits.append({"id": chunk_id, "score": float(score), "metadata": md})
+            score_float = float(score)
+            hits.append({
+                "id": chunk_id,
+                "score": score_float,
+                "faiss_score": score_float,
+                "metadata": md,
+            })
         return hits
+
+    def search_raw(self, query: str, top_k: int = 10) -> List[Dict]:
+        """Embed the query text and return the top chunks using FAISS search."""
+        emb = self._ensure_embedder()
+        qvec = emb.embed_query(query)
+        return self.query(qvec, top_k)

@@ -27,7 +27,7 @@ def load_skip_ids():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="configs/ingestion.yaml")
+    ap.add_argument("--config", default="configs/ingestion/default.yaml")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
@@ -54,8 +54,13 @@ def main():
     print(f"[discover] found {len(links)} candidate PDFs")
 
     records = []
+    seen_ids = set()
+    seen_urls = set()
     for i, link in enumerate(links, 1):
         print(f"[download] ({i}/{len(links)}) {link.url}")
+        if link.url in seen_urls:
+            print(f"[skip] already processed url: {link.url}")
+            continue
         pdf_path = download_pdf(link.url, download_dir, timeout, ua, attempts, backoff)
         if not pdf_path:
             print(f"[skip] not a pdf or failed: {link.url}")
@@ -63,6 +68,9 @@ def main():
         rec_id = Path(pdf_path).stem
         if rec_id in skip_ids:
             print(f"[skip] {rec_id} is in skip_ids.txt")
+            continue
+        if rec_id in seen_ids:
+            print(f"[skip] duplicate document id: {rec_id}")
             continue
 
         parsed = parse_pdf(
@@ -85,6 +93,8 @@ def main():
             "meta": parsed.meta,
         }
         records.append(rec)
+        seen_ids.add(rec_id)
+        seen_urls.add(link.url)
 
     print(f"[store] writing {len(records)} records")
     write_jsonl(records, out_jsonl)

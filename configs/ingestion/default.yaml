@@ -4,12 +4,16 @@ years: [2020, 2021, 2022, 2023, 2024, 2025]
 
 seed_urls:
 #  - "https://www.insidecotton.com/categories/2020-final-reports"
- # - "https://www.insidecotton.com/categories/2021-final-reports"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2021+Final+Reports+%28249068%29"
   #- "https://www.insidecotton.com/categories/2022-final-reports"
-  - "https://www.insidecotton.com/categories/2023-final-reports"
-  - "https://www.insidecotton.com/categories/2024-final-reports"
-  - "https://www.insidecotton.com/categories/2025-final-reports"
+  #- "https://www.insidecotton.com/categories/2023-final-reports"
+ # - "https://www.insidecotton.com/categories/2024-final-reports"
+  #- "https://www.insidecotton.com/categories/2025-final-reports"
   - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023+Final+Reports+%28266358%29"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023%20Final%20Reports%20%28266358%29&page=1"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2022%20Final%20Reports%20%28249069%29&page=0"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2022%20Final%20Reports%20%28249069%29&page=1"
 
 include_patterns:
   - "\\.pdf($|\\?)"

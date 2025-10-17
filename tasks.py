@@ -12,20 +12,98 @@ import sys
 import subprocess
 import time
 from pathlib import Path
+
+import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
 
-PY        = sys.executable
-API_HOST  = os.environ.get("HOST", "0.0.0.0")
-API_PORT  = int(os.environ.get("PORT", "8000"))
-UI_PORT   = int(os.environ.get("UI_PORT", "8501"))
-API_BASE  = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
-EMB_MODEL = os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
+from invoke import Collection
+
+PY = sys.executable
+API_HOST = os.environ.get("HOST", "0.0.0.0")
+API_PORT = int(os.environ.get("PORT", "8000"))
+UI_PORT = int(os.environ.get("UI_PORT", "8501"))
+API_BASE = os.environ.get("COTTON_API_BASE", f"http://localhost:{API_PORT}/api")
+
+RUNTIME_CFG = Path(os.environ.get("COTTON_RUNTIME", "configs/runtime/openai.yaml"))
+OPENAI_RUNTIME_CFG = Path("configs/runtime/openai.yaml")
+_RUNTIME_CACHE: dict | None = None
+
+
+def _coerce_bool(value, default=None):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            return True
+        if lowered in {"false", "0", "no", "n"}:
+            return False
+    try:
+        return bool(int(value))
+    except Exception:
+        return default
+
+
+def _load_runtime_cfg() -> dict:
+    global _RUNTIME_CACHE
+    if _RUNTIME_CACHE is not None:
+        return _RUNTIME_CACHE
+    if not RUNTIME_CFG.exists():
+        _RUNTIME_CACHE = {}
+        return _RUNTIME_CACHE
+    try:
+        with RUNTIME_CFG.open("r", encoding="utf-8") as fh:
+            _RUNTIME_CACHE = yaml.safe_load(fh) or {}
+    except Exception:
+        _RUNTIME_CACHE = {}
+    return _RUNTIME_CACHE
+
+
+def _switch_runtime_cfg(path: Path) -> None:
+    global RUNTIME_CFG, _RUNTIME_CACHE
+    RUNTIME_CFG = Path(path)
+    _RUNTIME_CACHE = None
+    os.environ["COTTON_RUNTIME"] = str(RUNTIME_CFG)
+    if not RUNTIME_CFG.exists():
+        raise SystemExit(f"Runtime config not found: {RUNTIME_CFG}")
+
+
+def _resolve_embed_settings() -> dict:
+    cfg = _load_runtime_cfg().get("embedder", {}) or {}
+    adapter = os.environ.get("EMB_ADAPTER") or cfg.get("adapter") or "bge_local"
+    adapter_key = adapter.lower()
+    default_model = "BAAI/bge-small-en-v1.5"
+    if adapter_key.startswith("openai"):
+        default_model = "text-embedding-3-small"
+    model = os.environ.get("EMB_MODEL") or cfg.get("model") or default_model
+    normalize = _coerce_bool(cfg.get("normalize"), True)
+    batch_size = cfg.get("batch_size", cfg.get("batch", 64))
+    try:
+        batch_size = int(batch_size)
+    except (TypeError, ValueError):
+        batch_size = 64
+    return {
+        "adapter": adapter,
+        "model": model,
+        "batch_size": batch_size,
+        "normalize": normalize,
+    }
+
+
+def _resolve_llm_model(default: str = "gpt-4o-mini") -> str:
+    cfg = _load_runtime_cfg().get("llm", {}) or {}
+    return os.environ.get("LLM_MODEL") or cfg.get("model") or default
+
+
+LLM_MODEL = _resolve_llm_model()
 
 # Paths
 RAW_DIR    = Path("data/raw")
-INGEST_CFG = Path("configs/ingestion.yaml")
+INGEST_CFG = Path("configs/ingestion/default.yaml")
 DOCS       = Path("data/staging/docs.jsonl")
 CLEANED    = Path("data/staging/cleaned.jsonl")
 CHUNKS     = Path("data/staging/chunks.jsonl")
@@ -67,7 +145,7 @@ def _assert_nonempty(label: str, path: Path, hint: str):
 def ingest(c, config=None):
     """
     Crawl + extract → write docs.jsonl using YAML config.
-    Default: configs/ingestion.yaml; override with --config path/to/file.yaml
+    Default: configs/ingestion/default.yaml; override with --config path/to/file.yaml
     """
     cfg = Path(config) if config else INGEST_CFG
     if not cfg.exists():
@@ -84,7 +162,7 @@ def clean_extract(c):
     _run(f"{PY} -m app.clean_extract --in {DOCS} --out {CLEANED}")
 
 @task
-def chunk(c, max_tokens=512, overlap=64, use_cleaned=True):
+def chunk(c, max_tokens=896, overlap=128, use_cleaned=True):
     """Chunk docs -> chunks.jsonl"""
     _ensure_parent(CHUNKS)
     src = CLEANED if use_cleaned and CLEANED.exists() else DOCS
@@ -96,17 +174,34 @@ def embed(c):
     if _jsonl_count(CHUNKS) == 0:
         raise SystemExit("No chunks with text found. Check data/staging/chunks.jsonl (ingestion probably produced 0 docs).")
     _ensure_parent(EMB_EDS)
+    settings = _resolve_embed_settings()
+    adapter = settings["adapter"]
+    model = settings["model"]
+    batch = settings["batch_size"]
+    normalize = settings["normalize"]
+    print(f"[embed] adapter={adapter} model={model} batch={batch}")
+    normalize_flag = ""
+    if normalize is False:
+        normalize_flag = " --no-normalize"
+    elif normalize is True:
+        normalize_flag = " --normalize"
+
     _run(
         f'{PY} -m scripts.build_embeddings '
         f'--chunks {CHUNKS} '
         f'--out_vecs {EMB_EDS} '
         f'--out_ids {EMB_IDS} '
-        f'--model "{EMB_MODEL}"'
+        f'--model "{model}" '
+        f'--adapter "{adapter}" '
+        f'--batch {batch}'
+        f'{normalize_flag}'
     )
 
 @task
 def faiss(c):
     """Build FAISS index (embeddings -> vectors.faiss)."""
+    settings = _resolve_embed_settings()
+    print(f"[faiss] using embeddings from adapter={settings['adapter']} model={settings['model']}")
     _ensure_parent(FAISS_IDX)
     _run(f'{PY} -m scripts.build_faiss --vecs {EMB_EDS} --index_out {FAISS_IDX}')
 
@@ -132,9 +227,19 @@ def build(c):
     faiss(c)
 
 @task
-def query(c, q, k=8, neighbors=2, per_doc=2):
-    """CLI test against FAISS"""
-    _run(f'{PY} -m scripts.query_faiss --q "{q}" --k {k} --neighbors {neighbors} --per-doc {per_doc}')
+def query(c, q, k=8, neighbors=2, per_doc=2, show_titles=True):
+    """CLI test against FAISS (toggle metadata with --show-titles/--no-show-titles)."""
+    title_flag = "--show-titles" if show_titles else "--no-show-titles"
+    cmd = (
+        f'{PY} -m scripts.query_faiss '
+        f'--q "{q}" '
+        f'--k {k} '
+        f'--neighbors {neighbors} '
+        f'--per-doc {per_doc} '
+        f'{title_flag}'
+    )
+    print(f"[query] {cmd}")
+    _run(cmd)
 
 @task
 def api(c, reload=True):
@@ -154,6 +259,10 @@ def dev(c, reload=True):
     Ensure index exists, then run API + UI together.
     Works on Windows/macOS/Linux. Ctrl+C in Streamlit will shut down API too.
     """
+    if not RUNTIME_CFG.exists():
+        print(f"[dev] Runtime config {RUNTIME_CFG} missing -> switching to {OPENAI_RUNTIME_CFG}")
+        _switch_runtime_cfg(OPENAI_RUNTIME_CFG)
+
     if not FAISS_IDX.exists():
         print("FAISS index missing → running full build...")
         build(c)
@@ -193,6 +302,11 @@ def eval_extract(c):
     _run(f'{PY} -m app.extraction_eval')
 
 @task
+def eval_retrieval(c, cfg="configs/runtime/openai.yaml", q="eval/gold/gold_ai_knowledge_hub.jsonl", k=6):
+    """Evaluate retrieval metrics for native vs LangChain orchestrators."""
+    _run(f'{PY} -m scripts.eval_retrieval --cfg {cfg} --q {q} --k {k}')
+
+@task
 def clean(c):
     """Remove intermediate artifacts (safe)."""
     for p in [DOCS, CLEANED, CHUNKS]:
@@ -208,9 +322,41 @@ def clobber(c):
             Path(p).unlink()
             print("deleted", p)
 
+
+@task(name="regress-langchain")
+def regress_langchain(c, before=None, after=None, queries="eval/gold/gold_ai_knowledge_hub.jsonl", k=None, out=None):
+    """
+    Compare retrieval hit-rate/latency between two runtime configs.
+    Defaults: before=configs/runtime/openai.yaml, after=current COTTON_RUNTIME.
+    """
+    before_cfg = Path(before) if before else OPENAI_RUNTIME_CFG
+    after_cfg = Path(after) if after else RUNTIME_CFG
+    cmd = (
+        f"{PY} -m scripts.retrieval.regress "
+        f"--before {before_cfg} "
+        f"--after {after_cfg} "
+        f"--queries {queries}"
+    )
+    if k is not None:
+        cmd += f" --k {k}"
+    if out is not None:
+        cmd += f" --out {out}"
+    _run(cmd)
+
 @task
 def rebuild(c):
     """Full clean rebuild of the pipeline."""
     clobber(c)
     build(c)
     print("Rebuild complete.")
+
+
+ns = Collection.from_module(sys.modules[__name__])
+try:
+    eval_task = ns["eval_retrieval"]
+except KeyError:
+    pass
+else:
+    eval_ns = Collection("eval")
+    eval_ns.add_task(eval_task, name="retrieval")
+    ns.add_collection(eval_ns)

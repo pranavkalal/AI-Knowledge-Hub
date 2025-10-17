@@ -32,6 +32,7 @@ venv/
 .env.*
 .envrc
 .python-version
+!.env.example
 
 # ---------- IDE ----------
 .vscode/
@@ -64,5 +65,4 @@ store/*.idx
 # ---------- Misc ----------
 structure.txt
 .gitattributes
-
 

@@ -7,11 +7,17 @@ class Embedder:
         self.model = SentenceTransformer(model_name)
         self.model.max_seq_length = max_len
 
-    def encode(self, texts: list[str], batch_size: int = 64) -> np.ndarray:
+    def encode(
+        self,
+        texts: list[str],
+        batch_size: int = 64,
+        normalize_embeddings: bool = True,
+        show_progress_bar: bool = True,
+    ) -> np.ndarray:
         return self.model.encode(
             texts,
             batch_size=batch_size,
             convert_to_numpy=True,
-            normalize_embeddings=True,
-            show_progress_bar=True,
+            normalize_embeddings=normalize_embeddings,
+            show_progress_bar=show_progress_bar,
         ).astype(np.float32)

@@ -1,0 +1,60 @@
+# Opinionated preset for running the Knowledge Hub with OpenAI embeddings
+# and LangChain orchestration. Point COTTON_RUNTIME at this file to enable it.
+
+orchestrator: langchain
+
+embedder:
+  adapter: openai
+  model: text-embedding-3-small
+  batch_size: 256
+  normalize: true
+  max_retries: 5
+  retry_backoff: 2.0
+
+vector_store:
+  adapter: faiss_local
+  path: data/embeddings/vectors.faiss
+  ids: data/embeddings/ids.npy
+  meta: data/staging/chunks.jsonl
+
+reranker:
+  adapter: openai_reranker
+  model: text-embedding-3-large
+  topn: 20
+  truncate_chars: 1200
+  max_retries: 5
+  retry_backoff: 2.0
+
+llm:
+  adapter: openai
+  model: gpt-4o-mini
+  temperature: 0.2
+  max_output_tokens: 900
+  max_retries: 3
+  timeout: 60
+
+retrieval:
+  k: 6
+  mode: dense
+  rerank: true
+  neighbors: 1
+  per_doc: 4
+  diversify_per_doc: true
+  max_preview_chars: 2400
+  max_snippet_chars: 1600
+  filters:
+    year_min: 2019
+    year_max: 2025
+  use_multiquery: false
+  use_compression: false
+
+langchain:
+  trace: true
+  stream: true
+  use_chat_openai: true
+  chat_openai:
+    model: gpt-4o-mini
+    temperature: 0.2
+    max_output_tokens: 900
+    max_retries: 3
+    timeout: 60

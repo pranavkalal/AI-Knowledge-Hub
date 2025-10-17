@@ -12,6 +12,10 @@ CHUNKS ?= data/staging/chunks.jsonl
 EMBEDS ?= data/embeddings/embeddings.npy
 INDEX  ?= data/embeddings/vectors.faiss
 ARGS   ?=
+EMB_ADAPTER ?= openai
+EMB_MODEL ?= text-embedding-3-small
+EMB_BATCH ?= 128
+EMB_NORMALIZE ?= 1
 
 # -------- Cross-platform shims
 ifeq ($(OS),Windows_NT)
@@ -42,10 +46,10 @@ ingest:
 ifeq ($(OS),Windows_NT)
 	@if not exist logs $(MKDIR) logs
 	@set LOG=logs\ingest_$($(NOW)).log && \
-	$(PY) -m app.ingest --config configs/ingestion.yaml 2>&1 | powershell -NoProfile -Command "$$input | Tee-Object -FilePath $$env:LOG -Append"
+	$(PY) -m app.ingest --config configs/ingestion/default.yaml 2>&1 | powershell -NoProfile -Command "$$input | Tee-Object -FilePath $$env:LOG -Append"
 else
 	$(MKDIR) logs
-	$(PY) -m app.ingest --config configs/ingestion.yaml 2>&1 | $(TEE) logs/ingest_$(NOW).log
+	$(PY) -m app.ingest --config configs/ingestion/default.yaml 2>&1 | $(TEE) logs/ingest_$(NOW).log
 endif
 
 eval.extract:
@@ -61,10 +65,11 @@ chunk-stats:
 	$(PY) tests/chunk_stats.py --in $(CHUNKS)
 
 embed:
-	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_embeddings --chunks $(CHUNKS)
+	@if [ "$(EMB_NORMALIZE)" = "0" ]; then NORM_FLAG=--no-normalize; else NORM_FLAG=--normalize; fi; \
+	EMB_ADAPTER=$(EMB_ADAPTER) EMB_MODEL=$(EMB_MODEL) PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_embeddings --chunks $(CHUNKS) --adapter $(EMB_ADAPTER) --model $(EMB_MODEL) --batch $(EMB_BATCH) $$NORM_FLAG
 
 faiss:
-	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_faiss --vecs $(EMBEDS) --index_out $(INDEX)
+	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build.faiss --vecs $(EMBEDS) --index_out $(INDEX)
 
 
 # Guarded query (forces Q and passes through ARGS)
@@ -144,7 +149,5 @@ ask:
 	@curl -s http://localhost:$(PORT)/api/ask \
 		-H "Content-Type: application/json" \
 		-d "$$(jq -nc --arg q "$(Q)" --argjson k $(K) '{question:$$q, k:$$k}')" | jq
-
-
 
 
