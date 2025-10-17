@@ -96,8 +96,6 @@ def _resolve_char_span(
     return span_start, span_end
 
 
-DEFAULT_MAX_TOKENS = int(os.environ.get("CHUNK_MAX_TOKENS", 896))
-DEFAULT_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", 128))
 
 
 def chunk_text(
