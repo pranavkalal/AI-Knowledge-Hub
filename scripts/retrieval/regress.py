@@ -17,8 +17,13 @@ from typing import Any, Dict, Iterable, List, Tuple
 from app.factory import build_pipeline
 
 
-def _coerce_path(value: str) -> Path:
+def _coerce_path(value: str, base_dir: str | Path = "~") -> Path:
+    base = Path(base_dir).expanduser().resolve()
     path = Path(value).expanduser().resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        raise ValueError(f"Path {path} is outside the allowed directory {base}")
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     return path
