@@ -26,54 +26,58 @@ def run_command(cmd):
     logger.info(f"Running: {cmd}")
     subprocess.run(cmd, shell=True, check=True)
 
+from rag.store.sqlite_store import (
+    get_documents_by_status, 
+    insert_chunks, 
+    update_document_status,
+    get_all_chunks
+)
+
 def ingest_data_raw():
-    raw_dir = Path("data/raw")
     chunks_path = Path("data/staging/chunks.jsonl")
     
-    if not raw_dir.exists():
-        logger.error(f"Directory not found: {raw_dir}")
+    # 1. Fetch documents from SQLite
+    docs = get_documents_by_status('downloaded')
+    
+    if not docs:
+        logger.warning("No 'downloaded' documents found in SQLite.")
         return
 
-    pdfs = list(raw_dir.glob("*.pdf"))
-    if not pdfs:
-        logger.warning(f"No PDFs found in {raw_dir}")
-        return
-
-    logger.info(f"Found {len(pdfs)} PDFs in {raw_dir}")
+    logger.info(f"Found {len(docs)} documents to process in SQLite")
     
     # Ensure staging dir exists
     chunks_path.parent.mkdir(parents=True, exist_ok=True)
     
-    all_chunks = []
+    new_chunks_count = 0
 
-    # Process PDFs one by one to save memory
+    # Process PDFs one by one
     import gc
     
-    # Limit to 5 PDFs for now to prevent hanging
-    pdfs = pdfs[:5] 
-    logger.info(f"Processing first {len(pdfs)} PDFs to avoid memory issues...")
+    for doc in docs:
+        pdf_path = Path("data/raw") / doc['filename']
+        
+        if not pdf_path.exists():
+            logger.error(f"File not found: {pdf_path}")
+            continue
 
-    for pdf_path in pdfs:
         try:
-            logger.info(f"Processing {pdf_path.name}...")
+            logger.info(f"Processing {doc['title']} ({doc['filename']})...")
             
             # 1. Parse with Docling
-            # Re-initialize converter per file if needed, or just rely on scope
             parsed = parse_pdf_multimodal(str(pdf_path))
             
             # 2. Convert to records
-            doc_id = pdf_path.stem.replace(" ", "_")
             records = elements_to_records(
                 parsed, 
-                doc_id, 
+                doc['id'], 
                 extra_meta={
-                    "title": pdf_path.stem,
-                    "filename": pdf_path.name
+                    "title": doc['title'],
+                    "filename": doc['filename']
                 }
             )
             logger.info(f"  Extracted {len(records)} elements")
             
-            # Clear parsed object to free memory
+            # Clear parsed object
             del parsed
             gc.collect()
 
@@ -84,7 +88,12 @@ def ingest_data_raw():
                 doc_chunks.extend(chunks)
             
             logger.info(f"  Generated {len(doc_chunks)} chunks")
-            all_chunks.extend(doc_chunks)
+            
+            # 4. Write to SQLite
+            if doc_chunks:
+                insert_chunks(doc_chunks)
+                update_document_status(doc['id'], 'processed')
+                new_chunks_count += len(doc_chunks)
             
             # Clear records
             del records
@@ -92,41 +101,38 @@ def ingest_data_raw():
             gc.collect()
                 
         except Exception as e:
-            logger.error(f"Failed to process {pdf_path.name}: {e}")
+            logger.error(f"Failed to process {doc['filename']}: {e}")
             import traceback
             traceback.print_exc()
 
-    if not all_chunks:
-        logger.warning("No chunks generated. Exiting.")
-        return
-
-    # 4. Write chunks to JSONL
-    logger.info(f"Writing {len(all_chunks)} chunks to {chunks_path}...")
+    if new_chunks_count == 0:
+        logger.warning("No new chunks generated.")
+    
+    # 5. Export ALL chunks from SQLite to JSONL for embedding script
+    logger.info("Exporting all chunks from SQLite to JSONL for embedding generation...")
+    all_db_chunks = get_all_chunks()
+    
     with open(chunks_path, "w", encoding="utf-8") as f:
-        for chunk in all_chunks:
+        for chunk in all_db_chunks:
             f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 
-    # 5. Run Embedding and FAISS build
+    # 6. Run Embedding and FAISS build
     logger.info("Building embeddings...")
-    # Using default paths from tasks.py
     emb_eds = "data/embeddings/embeddings.npy"
     emb_ids = "data/embeddings/ids.npy"
     faiss_idx = "data/embeddings/vectors.faiss"
     
-    # Ensure embeddings dir exists
     Path(emb_eds).parent.mkdir(parents=True, exist_ok=True)
 
-    # Call build_embeddings
-    # Using OpenAI embeddings
-    # Call build_embeddings
-    # Using OpenAI embeddings to match runtime config
-    run_command(f"{sys.executable} -m scripts.build_embeddings --chunks {chunks_path} --out_vecs {emb_eds} --out_ids {emb_ids} --model text-embedding-3-small --adapter openai --batch 256 --normalize")
+    # Use the SAME python executable that is running this script
+    python_exe = sys.executable
     
-    # Call build_faiss
+    run_command(f"{python_exe} -m scripts.build_embeddings --chunks {chunks_path} --out_vecs {emb_eds} --out_ids {emb_ids} --model text-embedding-3-small --adapter openai --batch 256 --normalize")
+    
     logger.info("Building FAISS index...")
-    run_command(f"{sys.executable} -m scripts.build_faiss --vecs {emb_eds} --index_out {faiss_idx}")
+    run_command(f"{python_exe} -m scripts.build_faiss --vecs {emb_eds} --index_out {faiss_idx}")
 
-    logger.info(f"\n✅ Ingestion Complete! Indexed {len(all_chunks)} chunks from {len(pdfs)} documents.")
+    logger.info(f"\n✅ Ingestion Complete! Indexed {len(all_db_chunks)} chunks.")
 
 if __name__ == "__main__":
     ingest_data_raw()

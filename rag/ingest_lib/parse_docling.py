@@ -86,6 +86,9 @@ def parse_pdf_multimodal(
         
         # Iterate through document elements
         for item, level in doc.iterate_items():
+            # DEBUG: Log all labels to understand Docling's labeling
+            logger.debug(f"Docling element: label='{item.label}' level={level}")
+            
             # Get page number and bbox if available
             page_num = None
             bbox = None
@@ -104,7 +107,7 @@ def parse_pdf_multimodal(
                     )
             
             # Handle different element types
-            if item.label == "text" or item.label == "paragraph":
+            if item.label in ["text", "paragraph", "title", "section-header"]:
                 text = item.text.strip()
                 if text:
                     elements.append(ParsedElement(
@@ -115,7 +118,8 @@ def parse_pdf_multimodal(
                     ))
                     full_text_parts.append(text)
             
-            elif item.label == "table" and extract_tables:
+            # Flexible table matching
+            elif "table" in item.label.lower() and extract_tables:
                 # Export table to markdown
                 try:
                     table_md = item.export_to_markdown()
@@ -125,13 +129,15 @@ def parse_pdf_multimodal(
                             text=table_md,
                             page=page_num or 1,
                             bbox=bbox,
-                            metadata={"format": "markdown"}
+                            metadata={"format": "markdown", "label": item.label}
                         ))
                         full_text_parts.append(table_md)
+                        logger.info(f"Extracted table from page {page_num} (label: {item.label})")
                 except Exception as e:
                     logger.warning(f"Failed to export table: {e}")
             
-            elif item.label == "picture" and extract_images:
+            # Flexible image matching
+            elif item.label.lower() in ["picture", "figure", "image"] and extract_images:
                 # Save image and create text description
                 try:
                     if hasattr(item, 'image') and item.image:
@@ -151,9 +157,10 @@ def parse_pdf_multimodal(
                             page=page_num or 1,
                             bbox=bbox,
                             image_path=str(image_path),
-                            metadata={"filename": image_filename}
+                            metadata={"filename": image_filename, "label": item.label}
                         ))
                         full_text_parts.append(caption)
+                        logger.info(f"Extracted image from page {page_num} (label: {item.label})")
                 except Exception as e:
                     logger.warning(f"Failed to save image: {e}")
         

@@ -25,11 +25,11 @@ dist/
 htmlcov/
 
 # ---------- Environments & secrets ----------
-.venv*/
-venv/
+# .venv*/
+# venv/
 # .env
 # *.env
-.env.*
+# .env.*
 .envrc
 .python-version
 !.env.example

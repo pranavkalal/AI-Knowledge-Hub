@@ -105,13 +105,19 @@ def get_document(doc_id: str) -> Optional[Dict]:
         return dict(row) if row else None
 
 
-def get_pending_documents() -> List[Dict]:
-    """Get all documents with status='pending'."""
+def get_documents_by_status(status: str) -> List[Dict]:
+    """Get all documents with a specific status."""
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM documents WHERE status = 'pending'"
+            "SELECT * FROM documents WHERE status = ?",
+            (status,)
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_pending_documents() -> List[Dict]:
+    """Get all documents with status='pending'."""
+    return get_documents_by_status('pending')
 
 
 def update_document_status(doc_id: str, status: str) -> None:
@@ -171,6 +177,25 @@ def get_chunk_by_id(chunk_id: str) -> Optional[Dict]:
         )
         row = cursor.fetchone()
         return dict(row) if row else None
+
+
+def get_chunks_batch(chunk_ids: List[str]) -> Dict[str, Dict]:
+    """Get multiple chunks by ID, returning a dict mapped by ID, enriched with document metadata."""
+    if not chunk_ids:
+        return {}
+    
+    with get_db_connection() as conn:
+        placeholders = ', '.join(['?' for _ in chunk_ids])
+        cursor = conn.execute(
+            f"""
+            SELECT c.*, d.filename, d.source_url, d.title as doc_title, d.year, d.authors 
+            FROM chunks c
+            LEFT JOIN documents d ON c.doc_id = d.id
+            WHERE c.id IN ({placeholders})
+            """,
+            chunk_ids
+        )
+        return {row['id']: dict(row) for row in cursor.fetchall()}
 
 
 def get_all_chunks() -> List[Dict]:

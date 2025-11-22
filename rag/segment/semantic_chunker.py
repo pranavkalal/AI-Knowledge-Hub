@@ -130,7 +130,8 @@ def chunk_record_semantic(
         return []
     
     tokenizer = tokenizer or get_tokenizer()
-    doc_id = rec.get("id") or rec.get("doc_id")
+    # BUGFIX: Prioritize doc_id over id (id includes element suffix like _elem0001)
+    doc_id = rec.get("doc_id") or rec.get("id")
     if not doc_id:
         raise ValueError("Record missing 'id' or 'doc_id' field")
     
