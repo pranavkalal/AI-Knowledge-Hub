@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: cotton_api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the data directory so the index is accessible
+      - ./data:/app/data
+      # Mount configs
+      - ./configs:/app/configs
+      # Mount logs
+      - ./logs:/app/logs
+    environment:
+      - COTTON_RUNTIME=configs/runtime/openai.yaml
+      # Pass through OpenAI key if present in host env, or set it in .env file
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: cotton_ui
+    ports:
+      - "8501:8501"
+    environment:
+      # Point to the API service name within the docker network
+      - COTTON_API_BASE=http://api:8000/api
+    depends_on:
+      - api
+    restart: unless-stopped
