@@ -47,6 +47,7 @@ class Citation(BaseModel):
     name: Optional[str] = None      # some docs have 'name' separate to 'title'
     year: Optional[int] = None
     page: Optional[int] = None
+    bbox: Optional[List[float]] = None  # [x, y, width, height] for deep linking
     span: Optional[str] = None      # mapped from pipeline "snippet"
     score: Optional[float] = None   # original retrieval score
     cosine: Optional[float] = None  # alias (when vectors are L2-normalized)
@@ -112,6 +113,18 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
     for s in raw_sources:
         page_val = _coerce_page(s.get("page"))
         rel_path = s.get("rel_path") or s.get("filename")
+        
+        # Extract bbox if available (for deep linking)
+        bbox = s.get("bbox")
+        if bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            # Ensure all values are floats
+            try:
+                bbox = [float(x) for x in bbox]
+            except (TypeError, ValueError):
+                bbox = None
+        else:
+            bbox = None
+        
         citations.append(
             Citation(
                 sid=s.get("sid"),
@@ -120,6 +133,7 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 name=s.get("name"),
                 year=s.get("year"),
                 page=page_val,
+                bbox=bbox,  # Add bbox for deep linking
                 url=s.get("url"),
                 source_url=s.get("source_url"),
                 rel_path=rel_path,

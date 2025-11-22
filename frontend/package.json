@@ -23,6 +23,7 @@
     "postcss": "^8.5.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "react-pdf": "^10.2.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",

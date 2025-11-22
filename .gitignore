@@ -27,8 +27,8 @@ htmlcov/
 # ---------- Environments & secrets ----------
 .venv*/
 venv/
-.env
-*.env
+# .env
+# *.env
 .env.*
 .envrc
 .python-version

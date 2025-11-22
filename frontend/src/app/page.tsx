@@ -6,7 +6,20 @@ import { Search, ArrowRight, Leaf, Droplets, Sprout } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 export default function Home() {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (query.trim()) {
+      router.push(`/chat?q=${encodeURIComponent(query)}`);
+    }
+  };
+
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -41,19 +54,22 @@ export default function Home() {
         </motion.div>
 
         <motion.div variants={item} className="mx-auto w-full max-w-2xl">
-          <div className="relative">
+          <form onSubmit={handleSearch} className="relative">
             <Search className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
             <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="Ask about yield trends, pest management, or water efficiency..."
               className="h-12 w-full rounded-full border-slate-200 bg-white pl-12 pr-4 shadow-sm transition-all focus:border-[#009B77] focus:ring-[#009B77]"
             />
             <Button
+              type="submit"
               size="icon"
               className="absolute right-1.5 top-1.5 h-9 w-9 rounded-full bg-[#009B77] hover:bg-[#007a5e]"
             >
               <ArrowRight className="h-4 w-4" />
             </Button>
-          </div>
+          </form>
         </motion.div>
 
         <motion.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
