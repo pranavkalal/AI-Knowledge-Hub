@@ -16,6 +16,9 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 
 logger = logging.getLogger(__name__)
 
+# Enable DEBUG logging to see all Docling labels
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s - %(message)s')
+
 
 @dataclass
 class ParsedElement:
