@@ -10,8 +10,8 @@ from typing import List, Dict, Optional, Mapping
 import numpy as np
 import json
 from functools import lru_cache
+import faiss
 from app.ports import VectorStorePort
-from store.store_faiss import FaissFlatIP
 
 
 class FaissStoreAdapter(VectorStorePort):
@@ -23,8 +23,8 @@ class FaissStoreAdapter(VectorStorePort):
         embed_model: Optional[str] = None,
         embed_config: Optional[Mapping[str, object]] = None,
     ):
-        # Load your wrapper class (not the raw faiss index)
-        self.ff = FaissFlatIP.load(index_path)
+        # Load raw faiss index
+        self.index = faiss.read_index(index_path)
         self.ids = np.load(ids_path, allow_pickle=True)
         # self.meta_path = meta_path # Unused now
         self._embed_model = embed_model or os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
@@ -62,7 +62,7 @@ class FaissStoreAdapter(VectorStorePort):
 
     def query(self, query_vector: List[float], k: int) -> List[Dict]:
         q = np.array(query_vector, dtype="float32")[None, :]
-        D, I = self.ff.search(q, k)
+        D, I = self.index.search(q, k)
         
         # Get IDs of hits
         hit_ids = []

@@ -398,7 +398,7 @@ def build_chain(
         fallback_runnables.append(adapter_runnable)
         fallback_runnables.append(pipeline_fallback)
         llm_core = RunnableWithFallbacks(
-            runnable=_structured_chat_runnable(chat_llm),
+            runnable=_chat_plain_runnable(chat_llm),
             fallbacks=fallback_runnables,
         )
     else:

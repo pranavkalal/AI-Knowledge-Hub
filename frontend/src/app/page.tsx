@@ -45,7 +45,7 @@ export default function Home() {
       >
         <motion.div variants={item} className="space-y-4">
           <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-slate-900">
-            Unlock <span className="text-[#009B77]">Cotton Research</span>
+            Unlock <span className="text-[#692080]">Cotton Research</span>
           </h1>
           <p className="mx-auto max-w-[700px] text-slate-500 md:text-xl">
             Ask complex questions about Australian cotton R&D. Get answers grounded in
@@ -60,12 +60,12 @@ export default function Home() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Ask about yield trends, pest management, or water efficiency..."
-              className="h-12 w-full rounded-full border-slate-200 bg-white pl-12 pr-4 shadow-sm transition-all focus:border-[#009B77] focus:ring-[#009B77]"
+              className="h-12 w-full rounded-full border-slate-200 bg-white pl-12 pr-4 shadow-sm transition-all focus:border-[#692080] focus:ring-[#692080]"
             />
             <Button
               type="submit"
               size="icon"
-              className="absolute right-1.5 top-1.5 h-9 w-9 rounded-full bg-[#009B77] hover:bg-[#007a5e]"
+              className="absolute right-1.5 top-1.5 h-9 w-9 rounded-full bg-[#692080] hover:bg-[#501860]"
             >
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -77,8 +77,8 @@ export default function Home() {
             {
               icon: Leaf,
               text: "What are the latest findings on Verticillium wilt?",
-              color: "text-emerald-600",
-              bg: "bg-emerald-50",
+              color: "text-purple-600",
+              bg: "bg-purple-50",
             },
             {
               icon: Droplets,
@@ -96,12 +96,12 @@ export default function Home() {
             <Link
               key={i}
               href={`/chat?q=${encodeURIComponent(card.text)}`}
-              className="group relative flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-[#009B77]/50 hover:shadow-md"
+              className="group relative flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-[#692080]/50 hover:shadow-md"
             >
               <div className={`mb-3 rounded-lg ${card.bg} p-2 ${card.color}`}>
                 <card.icon className="h-5 w-5" />
               </div>
-              <p className="text-sm font-medium text-slate-700 group-hover:text-[#009B77]">
+              <p className="text-sm font-medium text-slate-700 group-hover:text-[#692080]">
                 {card.text}
               </p>
             </Link>

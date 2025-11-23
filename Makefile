@@ -1,153 +1,74 @@
 # -------------------------------
 #  Project: AI Knowledge Hub
-#  Purpose: ingestion, embeddings, FAISS, retrieval, API
+#  Purpose: RAG Pipeline & Web Application
 # -------------------------------
 
-# -------- Defaults (override at call time)
-Q ?=
-K ?= 5
-N ?= 2                 # neighbors
-PER_DOC ?= 2           # per-doc diversification
-CHUNKS ?= data/staging/chunks.jsonl
-EMBEDS ?= data/embeddings/embeddings.npy
-INDEX  ?= data/embeddings/vectors.faiss
-ARGS   ?=
-EMB_ADAPTER ?= openai
-EMB_MODEL ?= text-embedding-3-small
-EMB_BATCH ?= 128
-EMB_NORMALIZE ?= 1
+.PHONY: help install dev api ui ingest reindex clean test fmt
 
-# -------- Cross-platform shims
-ifeq ($(OS),Windows_NT)
-  SHELL := cmd.exe
-  .SHELLFLAGS := /C
-  PY := python
-  MKDIR := powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path"
-  TEE := powershell -NoProfile -Command "Tee-Object -FilePath"
-  NOW := powershell -NoProfile -Command "(Get-Date -Format 'yyyy-MM-dd_HH-mm-ss')"
-  QUOTE :=
-else
-  SHELL := /bin/bash
-  .SHELLFLAGS := -c
-  PY := python3
-  MKDIR := mkdir -p
-  TEE := tee
-  NOW := $(shell date "+%Y-%m-%d_%H-%M-%S")
-  QUOTE := "
-endif
+# Default target
+help:
+	@echo "Available commands:"
+	@echo "  make install    - Install backend and frontend dependencies"
+	@echo "  make dev        - Run both Backend and Frontend in parallel"
+	@echo "  make api        - Run Backend API only (port 8000)"
+	@echo "  make ui         - Run Frontend UI only (port 3000)"
+	@echo "  make ingest     - Run robust batched PDF ingestion"
+	@echo "  make reindex    - Rebuild FAISS index from existing chunks"
+	@echo "  make clean      - Clean up temporary files and caches"
+	@echo "  make test       - Run backend tests"
+	@echo "  make fmt        - Format code (ruff)"
 
-.PHONY: ingest eval.extract clean-extract chunk chunk-stats embed faiss query api api-prod fmt test help
+# -------------------------------
+# Installation
+# -------------------------------
+install:
+	@echo "📦 Installing Backend Dependencies..."
+	pip install -r requirements.txt
+	@echo "📦 Installing Frontend Dependencies..."
+	cd frontend && npm install
+
+# -------------------------------
+# Development (Parallel Launch)
+# -------------------------------
+dev:
+	@echo "🚀 Launching AI Knowledge Hub..."
+	@# Run api and ui in parallel. Requires 'make -j2 dev' usually, but we can force it with &
+	@trap 'kill 0' EXIT; \
+	make api & \
+	make ui & \
+	wait
+
+api:
+	@echo "🔌 Starting FastAPI Backend..."
+	python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+ui:
+	@echo "💻 Starting Next.js Frontend..."
+	cd frontend && npm run dev
 
 # -------------------------------
 # Data Pipeline
 # -------------------------------
-
 ingest:
-ifeq ($(OS),Windows_NT)
-	@if not exist logs $(MKDIR) logs
-	@set LOG=logs\ingest_$($(NOW)).log && \
-	$(PY) -m app.ingest --config configs/ingestion/default.yaml 2>&1 | powershell -NoProfile -Command "$$input | Tee-Object -FilePath $$env:LOG -Append"
-else
-	$(MKDIR) logs
-	$(PY) -m app.ingest --config configs/ingestion/default.yaml 2>&1 | $(TEE) logs/ingest_$(NOW).log
-endif
+	@echo "📄 Starting Batched Ingestion..."
+	python scripts/ingestion/run_batched.py
 
-eval.extract:
-	$(PY) -m app.extraction_eval
-
-clean-extract:
-	$(PY) -m app.clean_extract --in data/staging/docs.jsonl --out data/staging/cleaned.jsonl
-
-chunk:
-	$(PY) -m app.chunk --in data/staging/cleaned.jsonl --out $(CHUNKS)
-
-chunk-stats:
-	$(PY) tests/chunk_stats.py --in $(CHUNKS)
-
-embed:
-	@if [ "$(EMB_NORMALIZE)" = "0" ]; then NORM_FLAG=--no-normalize; else NORM_FLAG=--normalize; fi; \
-	EMB_ADAPTER=$(EMB_ADAPTER) EMB_MODEL=$(EMB_MODEL) PU=. PYTHONPATH=$$PU $(PY) -m scripts.build_embeddings --chunks $(CHUNKS) --adapter $(EMB_ADAPTER) --model $(EMB_MODEL) --batch $(EMB_BATCH) $$NORM_FLAG
-
-faiss:
-	PU=. PYTHONPATH=$$PU $(PY) -m scripts.build.faiss --vecs $(EMBEDS) --index_out $(INDEX)
-
-
-# Guarded query (forces Q and passes through ARGS)
-query:
-	@if [ -z "$(Q)" ]; then \
-	  echo 'Usage: make query Q="your text" K=8 N=2 PER_DOC=2 ARGS="--year-min 2015 --contains herbicide"'; \
-	  exit 1; \
-	fi
-	@echo "QUERY: $(Q)"
-	PU=. PYTHONPATH=$$PU $(PY) -m scripts.query_faiss \
-	  --q $(QUOTE)$(Q)$(QUOTE) \
-	  --k $(K) \
-	  --per-doc $(PER_DOC) \
-	  --neighbors $(N) \
-	  $(ARGS)
-
-
-
+reindex:
+	@echo "🔍 Rebuilding Search Index..."
+	python -m scripts.indexing.build_embeddings --chunks data/staging/chunks.jsonl --out_vecs data/embeddings/embeddings.npy --out_ids data/embeddings/ids.npy --model text-embedding-3-small --adapter openai --batch 256 --normalize
+	python scripts/indexing/build_faiss.py --embeddings data/embeddings/embeddings.npy --ids data/embeddings/ids.npy --out_index data/index/faiss.index
 
 # -------------------------------
-# Tooling
+# Maintenance
 # -------------------------------
+clean:
+	rm -rf __pycache__ .pytest_cache .ruff_cache
+	rm -rf frontend/.next frontend/node_modules/.cache
+	find . -name "*.pyc" -delete
 
 fmt:
 	ruff check . --fix
 	ruff format .
 
 test:
-	PYTHONPATH=. pytest -q
-
-help:
-	@echo 'Examples:'
-	@echo '  make query Q="Grazon Extra impact on cotton yield" K=8 N=2 PER_DOC=2 ARGS="--year-min 2010 --contains \"grazon extra,herbicide\" "'
-	@echo '  make query Q="pyriproxyfen spray window"'
-
-# -------------------------------
-# API
-# -------------------------------
-
-.PHONY: api api-prod ui dev stop-api ask.demo ask QJSON
-
-PY ?= python3
-UVICORN ?= uvicorn
-STREAMLIT ?= streamlit
-HOST ?= 0.0.0.0
-PORT ?= 8000
-UI_PORT ?= 8501
-COTTON_API_BASE ?= http://localhost:$(PORT)/api
-
-api:
-	PYTHONPATH=. $(PY) -m $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
-
-ui:
-	COTTON_API_BASE=$(COTTON_API_BASE) $(STREAMLIT) run ui/streamlit_app.py --server.port $(UI_PORT)
-
-# one-shot developer runner: starts API in bg, runs UI, cleans up API on exit
-dev:
-	PYTHONPATH=. $(PY) -m $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
-	echo $$! > .api.pid; \
-	COTTON_API_BASE=$(COTTON_API_BASE) $(STREAMLIT) run ui/streamlit_app.py --server.port $(UI_PORT); \
-	kill $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid
-
-stop-api:
-	-kill $$(cat .api.pid) 2>/dev/null || true; rm -f .api.pid
-
-# fixed ask demo (quotes escaped for Makefiles)
-ask.demo:
-	@curl -s http://localhost:$(PORT)/api/ask \
-		-H "Content-Type: application/json" \
-		-d "{\"question\":\"Summarise post-2018 water productivity trends with citations.\", \"k\":5}" | jq
-
-# parametric ask target: pass Q='your question' and optional K=#
-Q ?=
-K ?= 6
-ask:
-	@if [ -z "$(Q)" ]; then echo 'Usage: make ask Q="your question" K=6'; exit 1; fi
-	@curl -s http://localhost:$(PORT)/api/ask \
-		-H "Content-Type: application/json" \
-		-d "$$(jq -nc --arg q "$(Q)" --argjson k $(K) '{question:$$q, k:$$k}')" | jq
-
-
+	pytest tests/

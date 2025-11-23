@@ -46,7 +46,7 @@ def get_tokenizer(model_name: Optional[str] = None) -> PreTrainedTokenizerBase:
     # Check if we should use tiktoken
     use_tiktoken = os.environ.get("USE_TIKTOKEN", "").lower() in ("1", "true", "yes")
     if use_tiktoken:
-        from rag.segment.tiktoken_wrapper import TiktokenWrapper
+        from rag.ingest.chunkers.tiktoken_wrapper import TiktokenWrapper
         logger.info("Using OpenAI tiktoken encoder (cl100k_base)")
         return TiktokenWrapper()
 

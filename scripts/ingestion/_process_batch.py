@@ -28,6 +28,9 @@ from rag.store.sqlite_store import get_documents_by_status, insert_chunks, updat
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Force Docling parser to DEBUG to see image extraction details
+logging.getLogger("rag.ingest.parsers.docling_parser").setLevel(logging.DEBUG)
+
 def main(batch_size=5):
     """Process up to batch_size documents."""
     docs = get_documents_by_status('downloaded')[:batch_size]

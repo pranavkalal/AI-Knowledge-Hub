@@ -1,10 +1,10 @@
 import sys
 import os
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-# Ensure we use the right config
-os.environ["COTTON_RUNTIME"] = "configs/runtime/openai.yaml"
+from dotenv import load_dotenv
+load_dotenv()
 
 from app.factory import build_pipeline
 

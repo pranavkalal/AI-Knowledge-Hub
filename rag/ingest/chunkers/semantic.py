@@ -10,7 +10,7 @@ from typing import Dict, Iterator, List, Optional
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import PreTrainedTokenizerBase
 
-from rag.segment.chunker import (
+from rag.ingest.chunkers.base import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_OVERLAP,
     get_tokenizer,
@@ -148,7 +148,7 @@ def chunk_record_semantic(
         start=1,
     ):
         chunk_rec = {
-            "id": f"{doc_id}_chunk{idx:04d}",
+            "id": f"{rec['id']}_chunk{idx:04d}",
             "chunk_index": idx,
             "text": chunk["text"],
             "token_start": chunk["token_start"],

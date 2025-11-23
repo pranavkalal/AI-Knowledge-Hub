@@ -15,6 +15,10 @@ import json
 import os
 from pathlib import Path
 import numpy as np
+from dotenv import load_dotenv
+
+# Load env vars (API keys)
+load_dotenv()
 
 from app.adapters.loader import load_embedder
 

@@ -166,3 +166,110 @@ class QAPipeline:
             answer = f"{answer.strip()}\n\nSources:\n" + "\n".join(f"- {line}" for line in formatted_sources)
 
         return {"answer": answer, "sources": citations, "usage": usage}
+
+    def stream(
+        self,
+        question: str,
+        k: int = 6,
+        temperature: float = 0.2,
+        max_tokens: int = 600,
+        *,
+        mode: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        rerank: Optional[bool] = None
+    ):
+        """
+        Yields events:
+        - {"type": "sources", "data": [...]}
+        - {"type": "token", "token": "..."}
+        - {"type": "usage", "data": {...}}
+        """
+        q = (question or "").strip()
+        if not q:
+            yield {"type": "error", "message": "empty_question"}
+            return
+
+        # Reuse retrieval logic (copy-paste for now to avoid refactoring risk)
+        # In a real refactor, extract retrieval into _retrieve()
+        
+        # 1) embed query
+        qv = self.emb.embed_query(q)
+
+        # 2) retrieve top-k
+        settings = resolve_retrieval_settings(filters)
+        store_filters = {}
+        if settings.year_min is not None: store_filters["year_min"] = settings.year_min
+        if settings.year_max is not None: store_filters["year_max"] = settings.year_max
+
+        rerank_topn = None
+        if hasattr(self.rerank, "topn"):
+            try:
+                rerank_topn = int(getattr(self.rerank, "topn"))
+            except (TypeError, ValueError):
+                rerank_topn = None
+        candidate_limit = max(k * 5, rerank_topn if rerank_topn else 0)
+        if candidate_limit <= 0: candidate_limit = k * 5
+
+        overfetch = candidate_limit
+        query_kwargs = {"k": overfetch}
+        if mode is not None: query_kwargs["mode"] = mode
+        if store_filters: query_kwargs["filters"] = store_filters
+
+        try:
+            hits = self.store.query(qv, **query_kwargs)
+        except TypeError:
+            hits = self.store.query(qv, k=overfetch)
+
+        # 4) stitch
+        stitched_hits = prepare_hits(hits, self.store, settings, limit=candidate_limit)
+
+        # 5) rerank
+        do_rerank = True if rerank is None else bool(rerank)
+        final_hits = stitched_hits
+        if do_rerank:
+            try:
+                final_hits = self.rerank.rerank(q, stitched_hits)
+            except Exception:
+                final_hits = stitched_hits
+        
+        # 6) limit
+        hits = final_hits[:k]
+
+        if not hits:
+            yield {"type": "token", "token": "I couldn’t find relevant passages in the current corpus for that question."}
+            return
+
+        # Format sources
+        lines = []
+        citations = []
+        for idx, hit in enumerate(hits, start=1):
+            md = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+            sid = f"S{idx}"
+            snippet = format_snippet(md.get("preview") or md.get("text") or "", settings.max_snippet_chars)
+            title = md.get("title") or md.get("doc_id") or "Source"
+            meta_suffix = format_metadata(md)
+            line = f"[{sid}] {title}{f' {meta_suffix}' if meta_suffix else ''}: {snippet}"
+            lines.append(line)
+
+            citation = format_citation(hit)
+            citation["sid"] = sid
+            citation.setdefault("url", md.get("url"))
+            citation.setdefault("source_url", md.get("source_url"))
+            rel_path = md.get("rel_path") or md.get("filename")
+            if rel_path: citation.setdefault("rel_path", rel_path)
+            citations.append(citation)
+
+        # Yield sources first
+        yield {"type": "sources", "data": citations}
+
+        # Call LLM stream
+        user = build_user_prompt(q, "\n\n".join(lines))
+        
+        if hasattr(self.llm, "chat_stream"):
+            for token in self.llm.chat_stream(SYSTEM, user, temperature, max_tokens):
+                yield {"type": "token", "token": token}
+        else:
+            # Fallback to sync
+            ans, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+            yield {"type": "token", "token": ans}
+            yield {"type": "usage", "data": usage}

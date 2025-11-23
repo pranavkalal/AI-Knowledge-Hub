@@ -27,10 +27,7 @@ export default function RootLayout({
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container flex h-14 items-center">
             <Link href="/" className="mr-6 flex items-center space-x-2">
-              {/* CRDC Logo Placeholder */}
-              <div className="h-8 w-8 rounded-full bg-[#009B77] flex items-center justify-center text-white font-bold text-xs">
-                CRDC
-              </div>
+              <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
               <span className="hidden font-bold sm:inline-block text-slate-900">
                 Knowledge Hub
               </span>

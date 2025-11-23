@@ -388,13 +388,24 @@ def build_pipeline(cfg_path: str = None):
                     raise RuntimeError("Streaming not enabled")
                 payload = self._build_payload(question, temperature, max_tokens, dict(kwargs))
                 root_run_id = None
+                yielded_citations = False
                 async for event in self.chain.astream_events(payload, version="v1"):
                     evt_type = event.get("event")
                     if evt_type == "on_chain_start" and not root_run_id and not event.get("parent_ids"):
                         root_run_id = event.get("run_id")
+                    
                     data = event.get("data") or {}
+                    
+                    # Try to capture citations from intermediate steps
+                    if not yielded_citations and evt_type == "on_chain_end":
+                        output = data.get("output")
+                        if isinstance(output, dict) and "citations" in output and isinstance(output["citations"], list):
+                            citations = output["citations"]
+                            if citations:
+                                yield {"type": "sources", "data": citations}
+                                yielded_citations = True
+
                     if evt_type in {"on_llm_stream", "on_chat_model_stream"}:
-                        chunk_payload = data.get("chunk") or data.get("output")
                         chunk_payload = data.get("chunk") or data.get("output")
                         text = None
                         if chunk_payload is None:
@@ -424,17 +435,10 @@ def build_pipeline(cfg_path: str = None):
                             yield {"type": "token", "token": text}
                     elif evt_type == "on_chain_end" and root_run_id and event.get("run_id") == root_run_id:
                         output = data.get("output") or {}
-                        if hasattr(output, "content"):
-                            content = getattr(output, "content")
-                            if isinstance(content, list):
-                                output = {
-                                    "answer": "".join(
-                                        item.get("text", "") if isinstance(item, dict) else str(item)
-                                        for item in content
-                                    )
-                                }
-                            else:
-                                output = {"answer": content}
+                        # If we haven't yielded citations yet, try to get them from final output
+                        if not yielded_citations and isinstance(output, dict) and "citations" in output:
+                             yield {"type": "sources", "data": output["citations"]}
+                        
                         yield {"type": "final", "output": output}
                         return
 
