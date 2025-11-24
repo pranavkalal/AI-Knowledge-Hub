@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE, Citation } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
+import { cn } from "@/lib/utils";
 
 interface ChatInterfaceProps {
     initialQuery: string;
@@ -38,12 +39,14 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
         }
     }, [initialQuery]);
 
-    // Auto-scroll to bottom
+    // Auto-scroll to bottom only when a new message starts or loading state changes
     useEffect(() => {
         if (scrollRef.current) {
+            // Only scroll smoothly when loading starts/stops or a new message is added (length changes)
+            // We avoid scrolling on every token update to prevent "forced" scrolling
             scrollRef.current.scrollIntoView({ behavior: "smooth" });
         }
-    }, [messages, isLoading]);
+    }, [messages.length, isLoading]);
 
     const handleSend = async (text: string) => {
         if (!text.trim()) return;
@@ -149,52 +152,43 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
     };
 
     return (
-        <div className="flex h-full flex-col bg-slate-50/50 dark:bg-slate-900/50 backdrop-blur-sm">
-            <div className="flex items-center justify-center p-4 border-b border-slate-200/50 bg-white/50 backdrop-blur-md">
-                <img src="/logo.png" alt="CRDC Logo" className="h-12 w-auto object-contain" />
-            </div>
-            <ScrollArea className="flex-1 p-4 sm:p-6">
-                <div className="space-y-6 pb-4 max-w-5xl mx-auto">
+        <div className="flex h-full flex-col bg-white relative">
+            <ScrollArea className="flex-1 px-4 sm:px-0">
+                <div className="flex flex-col space-y-8 pb-32 pt-20 max-w-3xl mx-auto">
                     <AnimatePresence initial={false}>
                         {messages.map((msg) => (
                             <motion.div
                                 key={msg.id}
-                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                             >
-                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-sm ${msg.role === "user"
-                                        ? "bg-slate-200 text-slate-600"
-                                        : msg.error
-                                            ? "bg-red-100 text-red-600"
-                                            : "bg-[#692080] text-white"
-                                    }`}>
-                                    {msg.role === "user" ? <User className="h-5 w-5" /> : msg.error ? <AlertCircle className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
-                                </div>
+                                {msg.role === "assistant" && (
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
+                                        {msg.error ? <AlertCircle className="h-6 w-6 text-red-500" /> : <Sparkles className="h-6 w-6 text-[#4285f4] animate-pulse" />}
+                                    </div>
+                                )}
 
-                                <div className={`flex max-w-[85%] flex-col gap-2 rounded-2xl p-5 shadow-sm ${msg.role === "user"
-                                        ? "bg-white text-slate-800 ml-12"
-                                        : "glass text-slate-800 mr-12"
+                                <div className={`flex max-w-[80%] flex-col gap-2 ${msg.role === "user"
+                                    ? "bg-[#f0f4f9] text-slate-900 rounded-[20px] px-5 py-3"
+                                    : "bg-transparent text-slate-900 px-0 py-0"
                                     }`}>
-                                    <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed break-words">
+                                    <div className="prose prose-slate max-w-none leading-7 text-[16px]">
                                         {msg.content ? (
                                             <ReactMarkdown>{msg.content}</ReactMarkdown>
                                         ) : (
                                             isLoading && msg.role === "assistant" && !msg.error && (
-                                                <div className="flex items-center gap-2 text-slate-400">
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#692080] [animation-delay:-0.3s]"></span>
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#692080] [animation-delay:-0.15s]"></span>
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-[#692080]"></span>
+                                                <div className="flex items-center gap-1 h-6">
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.3s]"></span>
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.15s]"></span>
+                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400"></span>
                                                 </div>
                                             )
                                         )}
                                     </div>
 
                                     {msg.citations && msg.citations.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-black/5 dark:border-white/10">
-                                            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider flex items-center gap-1">
-                                                <Bot className="h-3 w-3" /> Sources
-                                            </span>
+                                        <div className="flex flex-wrap gap-2 mt-2">
                                             {msg.citations.map((cite, i) => (
                                                 <motion.button
                                                     key={cite.sid}
@@ -202,9 +196,9 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                                                     whileTap={{ scale: 0.95 }}
                                                     onClick={() => onCitationClick(cite.doc_id)}
                                                     title={cite.doc_id}
-                                                    className="inline-flex items-center gap-1 rounded-full border border-purple-100 bg-purple-50/50 px-2.5 py-1 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100 hover:border-purple-200"
+                                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:border-slate-300"
                                                 >
-                                                    <span className="w-4 h-4 rounded-full bg-purple-200 flex items-center justify-center text-[10px]">{i + 1}</span>
+                                                    <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-500">{i + 1}</span>
                                                     <span className="truncate max-w-[150px]">{cite.doc_id}</span>
                                                 </motion.button>
                                             ))}
@@ -218,8 +212,8 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                 </div>
             </ScrollArea>
 
-            <div className="p-4 sm:p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-200/50">
-                <div className="max-w-5xl mx-auto relative">
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pb-6 pt-10 px-4">
+                <div className="max-w-3xl mx-auto">
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
@@ -227,26 +221,33 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                         }}
                         className="relative group"
                     >
-                        <Input
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Ask anything about cotton research..."
-                            className="pr-14 h-14 text-base rounded-full border-slate-200 bg-white shadow-sm transition-all focus:ring-2 focus:ring-[#692080]/20 focus:border-[#692080] pl-6"
-                        />
-                        <Button
-                            type="submit"
-                            size="icon"
-                            disabled={isLoading || !query.trim()}
-                            className={`absolute right-2 top-2 h-10 w-10 rounded-full transition-all duration-300 ${query.trim()
-                                    ? "bg-[#692080] hover:bg-[#501860] hover:shadow-lg hover:shadow-[#692080]/30"
-                                    : "bg-slate-200 text-slate-400"
-                                }`}
-                        >
-                            <Send className="h-5 w-5" />
-                        </Button>
+                        <div className="relative flex items-center rounded-full bg-[#f0f4f9] px-4 py-3 transition-all focus-within:bg-[#e2e7eb] hover:bg-[#e2e7eb]">
+                            <Input
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Ask anything about cotton research..."
+                                className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none h-auto py-1"
+                            />
+                            <div className="flex items-center space-x-2">
+                                <Button
+                                    type="submit"
+                                    size="icon"
+                                    variant="ghost"
+                                    disabled={isLoading || !query.trim()}
+                                    className={cn(
+                                        "h-10 w-10 rounded-full transition-all",
+                                        query.trim() ? "bg-[#692080] text-white hover:bg-[#501860]" : "text-slate-400 hover:bg-slate-200"
+                                    )}
+                                >
+                                    <Send className="h-5 w-5" />
+                                </Button>
+                            </div>
+                        </div>
                     </form>
-                    <div className="text-center mt-2">
-                        <span className="text-[10px] text-slate-400 font-medium">AI Knowledge Hub • Powered by RAG</span>
+                    <div className="text-center mt-3">
+                        <span className="text-[11px] text-slate-400">
+                            AI Knowledge Hub can make mistakes. Please verify important information.
+                        </span>
                     </div>
                 </div>
             </div>

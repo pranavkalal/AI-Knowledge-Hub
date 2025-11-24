@@ -4,7 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-import { Header } from "@/components/layout/header";
+import { Sidebar } from "@/components/layout/sidebar";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -22,12 +22,12 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={cn(
-          "min-h-screen bg-background font-sans antialiased",
+          "flex min-h-screen bg-white font-sans antialiased",
           inter.variable
         )}
       >
-        <Header />
-        <main className="flex-1">{children}</main>
+        <Sidebar />
+        <main className="flex-1 overflow-auto bg-white">{children}</main>
       </body>
     </html>
   );
