@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 SYSTEM_PROMPT = (
     "You are an expert research assistant for the Cotton Research and Development Corporation (CRDC). "

@@ -76,27 +76,27 @@ export default function Home() {
           {[
             {
               icon: Leaf,
-              text: "What are the latest findings on Verticillium wilt?",
+              text: "What are the best practices for integrated pest management?",
               color: "text-purple-600",
               bg: "bg-purple-50",
             },
             {
               icon: Droplets,
-              text: "How can I improve water use efficiency in 2024?",
+              text: "Explain the nitrogen use efficiency guidelines for 2024.",
               color: "text-blue-600",
               bg: "bg-blue-50",
             },
             {
               icon: Sprout,
-              text: "Summarise the key outcomes of the 2023 Cotton Conference.",
+              text: "How does soil moisture affect cotton yield potential?",
               color: "text-amber-600",
               bg: "bg-amber-50",
             },
           ].map((card, i) => (
-            <Link
+            <div
               key={i}
-              href={`/chat?q=${encodeURIComponent(card.text)}`}
-              className="group relative flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-[#692080]/50 hover:shadow-md"
+              onClick={() => setQuery(card.text)}
+              className="group relative flex cursor-pointer flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-[#692080]/50 hover:shadow-md"
             >
               <div className={`mb-3 rounded-lg ${card.bg} p-2 ${card.color}`}>
                 <card.icon className="h-5 w-5" />
@@ -104,7 +104,7 @@ export default function Home() {
               <p className="text-sm font-medium text-slate-700 group-hover:text-[#692080]">
                 {card.text}
               </p>
-            </Link>
+            </div>
           ))}
         </motion.div>
       </motion.div>

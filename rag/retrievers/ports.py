@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.pydantic_v1 import PrivateAttr
+from pydantic import PrivateAttr
 
 from rag.retrieval.utils import prepare_hits, resolve_retrieval_settings
 from rag.retrieval.pdf_links import enrich_metadata

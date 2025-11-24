@@ -34,3 +34,19 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: cotton_db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=knowledge_hub
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

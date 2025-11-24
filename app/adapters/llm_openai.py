@@ -16,7 +16,7 @@ class OpenAIAdapter(LLMPort):
             messages=[{"role":"system","content":system}, {"role":"user","content":user}]
         )
         msg = resp.choices[0].message.content
-        usage = dict(usage) if usage else {}
+        usage = dict(resp.usage) if resp.usage else {}
         return msg, usage
 
     def chat_stream(self, system: str, user: str, temperature: float, max_tokens: int):

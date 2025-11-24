@@ -1,0 +1,23 @@
+# configs/runtime/postgres.yaml
+# Runtime configuration for Postgres + OpenAI
+
+embedder:
+  provider: openai
+  model: text-embedding-3-small
+
+vector_store:
+  type: postgres
+  # Connection string should be set in env var: POSTGRES_CONNECTION_STRING
+  # e.g. postgresql+psycopg2://user:pass@localhost:5432/dbname
+  table_name: chunks
+
+reranker:
+  adapter: openai
+  model: text-embedding-3-large
+  topn: 10
+
+llm:
+  adapter: openai
+  model: gpt-4o-mini
+
+orchestrator: native  # or langchain

@@ -43,6 +43,12 @@ def main():
     retry = cfg.get("retry", {})
     attempts = int(retry.get("attempts", 3))
     backoff = int(retry.get("backoff_secs", 2))
+    
+    # Parser config
+    parser_type = cfg.get("parser", "docling").lower()
+    
+    # Storage config
+    store_type = cfg.get("storage", {}).get("type", "file").lower()
 
     skip_ids = load_skip_ids()
     if skip_ids:
@@ -56,6 +62,37 @@ def main():
     records = []
     seen_ids = set()
     seen_urls = set()
+    
+    # Initialize Postgres adapter if needed
+    pg_store = None
+    if store_type == "postgres":
+        from app.adapters.vector_postgres import PostgresStoreAdapter
+        # We need an embedder for ingestion? 
+        # Actually, usually we chunk and embed.
+        # Let's assume we just store text chunks for now, or we need to load embedder here too.
+        # For simplicity, let's load the embedder defined in runtime config or just use OpenAI directly if configured.
+        # But wait, `ingest.py` usually just creates JSONL. 
+        # If we want to write to Postgres, we should probably do it here.
+        
+        # Let's load the embedder using the factory helper
+        from app.adapters.loader import load_embedder
+        # We might need a separate config for ingestion embedder or reuse runtime config
+        # For now, let's assume we use the same embedder config as runtime if available, 
+        # or just default to OpenAI if we are pushing to Postgres.
+        
+        # To keep it simple, let's require an embedder config in ingestion.yaml if using postgres
+        embed_cfg = cfg.get("embedder")
+        if not embed_cfg:
+             # Fallback to env vars or default
+             embed_cfg = {"provider": "openai", "model": "text-embedding-3-small"}
+        
+        embedder = load_embedder(embed_cfg, os.environ)
+        pg_store = PostgresStoreAdapter(
+            table_name=cfg.get("storage", {}).get("table_name", "chunks"),
+            connection_string=os.environ.get("POSTGRES_CONNECTION_STRING"),
+            embedder=embedder
+        )
+
     for i, link in enumerate(links, 1):
         print(f"[download] ({i}/{len(links)}) {link.url}")
         if link.url in seen_urls:
@@ -73,15 +110,28 @@ def main():
             print(f"[skip] duplicate document id: {rec_id}")
             continue
 
-        parsed = parse_pdf(
-            pdf_path,
-            extra_meta={
-                "source_url": link.url,
-                "source_page": link.source_page,
-                "title": link.title or "",
-                "year": link.year or "",
-            },
-        )
+        if parser_type == "azure":
+            from rag.ingest_lib.parser_azure import parse_pdf as parse_pdf_azure
+            parsed = parse_pdf_azure(
+                pdf_path,
+                extra_meta={
+                    "source_url": link.url,
+                    "source_page": link.source_page,
+                    "title": link.title or "",
+                    "year": link.year or "",
+                },
+            )
+        else:
+            parsed = parse_pdf(
+                pdf_path,
+                extra_meta={
+                    "source_url": link.url,
+                    "source_page": link.source_page,
+                    "title": link.title or "",
+                    "year": link.year or "",
+                },
+            )
+            
         rec = {
             "id": rec_id,
             "title": parsed.meta.get("title", ""),
@@ -95,6 +145,15 @@ def main():
         records.append(rec)
         seen_ids.add(rec_id)
         seen_urls.add(link.url)
+        
+        # If Postgres, chunk and store immediately
+        if pg_store:
+            # We need a chunker. Let's use the semantic chunker or a simple one.
+            # For now, let's use a simple recursive character splitter from langchain if available,
+            # or just import the one from `rag/ingest/chunkers` if it exists.
+            # Let's check `rag/ingest/chunkers` content first.
+            # Assuming we have a chunker available.
+            pass # TODO: Implement chunking and pushing to Postgres
 
     print(f"[store] writing {len(records)} records")
     write_jsonl(records, out_jsonl)
@@ -112,6 +171,38 @@ def main():
         ],
         out_csv,
     )
+    
+    if pg_store:
+        print("[store] pushing to Postgres...")
+        # Here we would iterate records, chunk them, embed them, and push to PG.
+        # Since I didn't implement the chunking loop above, I'll do it here.
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        
+        all_chunks = []
+        all_embeddings = []
+        
+        for rec in records:
+            chunks = splitter.split_text(rec["text"])
+            for idx, text_chunk in enumerate(chunks):
+                chunk_id = f"{rec['id']}_{idx}"
+                all_chunks.append({
+                    "id": chunk_id,
+                    "doc_id": rec["id"],
+                    "chunk_index": idx,
+                    "text": text_chunk,
+                    "metadata": rec["meta"]
+                })
+        
+        # Batch embed
+        batch_size = 100
+        for i in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[i:i+batch_size]
+            texts = [c["text"] for c in batch]
+            embeddings = pg_store.embedder.embed_texts(texts)
+            pg_store.add_documents(batch, embeddings)
+            print(f"   pushed {len(batch)} chunks")
+
     print("[done] ingestion complete.")
     return 0
 

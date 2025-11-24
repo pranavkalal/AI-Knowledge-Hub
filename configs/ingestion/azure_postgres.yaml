@@ -1,0 +1,25 @@
+# configs/ingestion/azure_postgres.yaml
+# Ingestion config for Azure Document Intelligence + PostgreSQL
+
+seed_urls:
+  - "https://www.cancer.gov/research/nci-role/2023-annual-plan-budget-proposal.pdf"
+  # Add your 10-15 PDF URLs here
+
+include_patterns:
+  - '\.pdf$'
+
+parser: azure  # Uses Azure Document Intelligence
+
+storage:
+  type: postgres
+  table_name: chunks
+
+embedder:
+  provider: openai
+  model: text-embedding-3-small
+
+output:
+  jsonl: "data/staging/azure_chunks.jsonl"
+  csv: "data/staging/azure_index.csv"
+
+download_dir: "data/downloads"

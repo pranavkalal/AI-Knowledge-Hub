@@ -4,6 +4,8 @@ import "./globals.css";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
+import { Header } from "@/components/layout/header";
+
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
@@ -24,33 +26,7 @@ export default function RootLayout({
           inter.variable
         )}
       >
-        <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="container flex h-14 items-center">
-            <Link href="/" className="mr-6 flex items-center space-x-2">
-              <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
-              <span className="hidden font-bold sm:inline-block text-slate-900">
-                Knowledge Hub
-              </span>
-            </Link>
-            <nav className="flex items-center space-x-6 text-sm font-medium">
-              <Link
-                href="/chat"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Research Assistant
-              </Link>
-              <Link
-                href="/library"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Library
-              </Link>
-            </nav>
-            <div className="ml-auto flex items-center space-x-4">
-              {/* Add UserMenu or Auth buttons here later */}
-            </div>
-          </div>
-        </header>
+        <Header />
         <main className="flex-1">{children}</main>
       </body>
     </html>

@@ -88,22 +88,34 @@ def build_pipeline(cfg_path: str = None):
     emb = load_embedder(cfg.get("embedder"), os.environ)
 
     # ---------------- Vector Store ----------------
+    # ---------------- Vector Store ----------------
     vs_cfg = cfg.get("vector_store", {})
-    index_path = vs_cfg.get("path", "data/embeddings/vectors.faiss")
-    ids_path = vs_cfg.get("ids", "data/embeddings/ids.npy")
-    meta_path = vs_cfg.get("meta", "data/staging/chunks.jsonl")
+    vs_type = vs_cfg.get("type", "faiss").lower()
+    
+    if vs_type == "postgres":
+        from app.adapters.vector_postgres import PostgresStoreAdapter
+        store = PostgresStoreAdapter(
+            table_name=vs_cfg.get("table_name", "chunks"),
+            connection_string=os.environ.get("POSTGRES_CONNECTION_STRING"),
+            embedder=emb
+        )
+    else:
+        # Default to FAISS
+        index_path = vs_cfg.get("path", "data/embeddings/vectors.faiss")
+        ids_path = vs_cfg.get("ids", "data/embeddings/ids.npy")
+        meta_path = vs_cfg.get("meta", "data/staging/chunks.jsonl")
 
-    _require_file(index_path, "FAISS index")
-    _require_file(ids_path, "IDs numpy file")
-    _require_file(meta_path, "Chunks metadata JSONL")
+        _require_file(index_path, "FAISS index")
+        _require_file(ids_path, "IDs numpy file")
+        _require_file(meta_path, "Chunks metadata JSONL")
 
-    store = FaissStoreAdapter(
-        index_path=index_path,
-        ids_path=ids_path,
-        meta_path=meta_path,
-        embed_model=cfg.get("embedder", {}).get("model") if isinstance(cfg.get("embedder"), dict) else None,
-        embed_config=cfg.get("embedder") if isinstance(cfg.get("embedder"), dict) else None,
-    )
+        store = FaissStoreAdapter(
+            index_path=index_path,
+            ids_path=ids_path,
+            meta_path=meta_path,
+            embed_model=cfg.get("embedder", {}).get("model") if isinstance(cfg.get("embedder"), dict) else None,
+            embed_config=cfg.get("embedder") if isinstance(cfg.get("embedder"), dict) else None,
+        )
 
     # ---------------- Reranker ----------------
     rr_cfg = cfg.get("reranker", {})
