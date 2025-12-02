@@ -1,227 +1,79 @@
 # CRDC AI Knowledge Hub
+*Unlocking 40+ years of Australian Cotton Research with AI.*
 
-AI-Enhanced Knowledge Hub for the Australian Cotton Industry - A modular RAG system that transforms 40+ years of cotton research into an intelligent, searchable knowledge base.
+## 🚀 Overview
+
+The **CRDC AI Knowledge Hub** is an intelligent search and question-answering system designed to make decades of agricultural research instantly accessible. By leveraging advanced **Retrieval-Augmented Generation (RAG)**, it transforms static PDF reports into a dynamic knowledge base, allowing researchers, agronomists, and stakeholders to ask questions and get evidence-based answers in seconds.
+
+## ✨ Key Features
+
+- **🤖 Intelligent Q&A**: Ask natural language questions like *"What are the best irrigation practices for cotton?"* and get comprehensive answers.
+- **📄 Evidence-Based**: Every answer is backed by citations from official CRDC research papers.
+- **🔍 Deep Linking**: Click a citation to jump directly to the exact paragraph in the original PDF source.
+- **🧠 Advanced Understanding**: Uses state-of-the-art AI to understand context, tables, and technical terminology.
+- **⚡ Hybrid Search**: Combines semantic understanding with keyword precision for accurate results.
+
+## 🛠️ Technology Stack
+
+Built with modern, scalable technologies:
+
+- **AI & LLM**: OpenAI GPT-4o, Text-Embedding-3
+- **Backend**: Python, FastAPI, LangChain
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Database**: PostgreSQL (Vector Store & Metadata)
+- **PDF Processing**: Azure Document Intelligence
+
+## 📸 How It Works
+
+1.  **Ingestion**: Research PDFs are processed to extract text, tables, and layout using Azure Document Intelligence.
+2.  **Indexing**: Content is semantically analyzed, chunked, and stored in PostgreSQL with vector embeddings.
+3.  **Retrieval**: User questions are matched with the most relevant research using hybrid search (Vector + Keyword).
+4.  **Generation**: AI synthesizes an answer using *only* the retrieved facts, ensuring accuracy.
 
 ---
 
-## Quick Start
+## 👨‍💻 Developer Guide
 
+### Quick Start
+
+**1. Clone & Install**
 ```bash
-# 1. Clone & Install
 git clone https://github.com/your-org/AI-Knowledge-Hub.git
 cd AI-Knowledge-Hub
-python3 -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
 
-# 2. Configure
+# Install dependencies (Backend & Frontend)
+make install
+```
+
+**2. Configure Environment**
+```bash
 cp .env.example .env
-# Edit .env: Add your OPENAI_API_KEY
-
-# 3. Ingest Documents (batched for stability)
-python scripts/ingestion/run_batched.py
-
-# 4. Run API Server
-python -m app.main
-
-# API Docs: http://localhost:8000/docs
 ```
+*Edit `.env` to add your `OPENAI_API_KEY` and `POSTGRES_CONNECTION_STRING`.*
 
----
-
-## What It Does
-
-- **Ingests** decades of cotton research PDFs using Docling (IBM's advanced PDF parser)
-- **Chunks** documents semantically with OpenAI's tiktoken tokenizer
-- **Embeds** using `text-embedding-3-small` for high-quality retrieval
-- **Indexes** with FAISS for fast similarity search
-- **Retrieves** with context stitching and optional reranking
-- **Generates** evidence-based answers with GPT-4o-mini, including citations
-
----
-
-## Repository Structure
-
-```
-AI-Knowledge-Hub/
-├── docs/                      # Documentation
-│   ├── ARCHITECTURE.md        # System design
-│   ├── API_CONTRACT.md        # API specifications
-│   └── LANGCHAIN_REVIEW.md    # LangChain analysis
-│
-├── scripts/                   # Production scripts
-│   ├── ingestion/             # PDF → SQLite pipeline
-│   │   ├── run_batched.py     # Main ingestion orchestrator
-│   │   └── import_excel.py    # Import metadata from Excel
-│   ├── indexing/              # Embeddings & FAISS
-│   │   ├── build_embeddings.py
-│   │   └── build_faiss.py
-│   ├── evaluation/            # Quality metrics
-│   └── utils/                 # Helper tools
-│       └── verify_pipeline.py # End-to-end test
-│
-├── rag/                       # Core RAG logic
-│   ├── ingest/                # Document processing
-│   │   ├── parsers/           # Docling PDF parser
-│   │   └── chunkers/          # Semantic chunking
-│   ├── retrieval/             # Search utilities
-│   ├── store/                 # SQLite database
-│   └── chain.py               # LangChain orchestration
-│
-├── app/                       # FastAPI server
-│   ├── adapters/              # Embedding, LLM, reranker
-│   ├── routers/               # API endpoints
-│   └── services/              # QA pipeline
-│
-├── frontend/                  # Next.js UI (optional)
-│
-├── data/
-│   ├── raw/                   # PDF documents
-│   ├── knowledge_hub.db       # SQLite (metadata + chunks)
-│   └── embeddings/            # Vectors + FAISS index
-│
-└── tools/                     # Dev/debug utilities
-```
-
----
-
-## Tech Stack
-
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| **PDF Parsing** | Docling (IBM) | Multi-modal: text, tables, images, bboxes |
-| **Chunking** | Semantic (LangChain) | Token-aware, preserves structure |
-| **Tokenizer** | tiktoken (OpenAI) | `cl100k_base` - matches embeddings |
-| **Embeddings** | text-embedding-3-small | 1536 dims, high quality |
-| **Vector Store** | FAISS | Fast approximate nearest neighbor |
-| **Metadata** | SQLite | Chunks, documents, bboxes for deep linking |
-| **LLM** | GPT-4o-mini | Structured outputs, citations |
-| **Reranker** | text-embedding-3-large | Optional quality boost |
-| **Orchestration** | LangChain (LCEL) | Composable chains, fallbacks |
-| **API** | FastAPI | OpenAPI docs, async |
-| **Frontend** | Next.js + shadcn/ui | Optional UI |
-
----
-
-## Key Features
-
-### 🔍 **Intelligent Retrieval**
-- Hybrid search (dense + optional BM25)
-- Context stitching (neighbor chunks for full context)
-- Per-document diversity
-- Configurable reranking
-
-### 📚 **Deep Linking to PDFs**
-- Bounding box coordinates stored in SQLite
-- Direct links to exact page + position: `/pdf/by-id/{doc_id}#page=5`
-- Frontend PDF viewer with highlight jumping
-
-### 🎯 **Semantic Chunking**
-- Respects document structure (sections → paragraphs → sentences)
-- Overlap for context continuity
-- Token-aware (matches embedding model)
-
-### 🔧 **Production-Ready**
-- Batched ingestion (prevents memory crashes)
-- SQLite for metadata (scalable, ACID)
-- Comprehensive logging
-- Evaluation scripts
-
----
-
-## Configuration
-
-All settings in `.env` (see `.env.example`):
-
+**3. Run the App**
 ```bash
-# Core
-OPENAI_API_KEY=sk-...
-EMB_MODEL=text-embedding-3-small
-LLM_MODEL=gpt-4o-mini
-
-# Chunking
-CHUNK_MAX_TOKENS=512
-CHUNK_OVERLAP=128
-USE_TIKTOKEN=1
-
-# Ingestion
-DOCLING_DEVICE=cpu  # Use 'mps' for Mac GPU (unstable)
-
-# Retrieval
-RETRIEVAL_K=6
-RETRIEVAL_NEIGHBORS=1
+make dev
 ```
+*This launches both the API (http://localhost:8000) and Frontend (http://localhost:3000).*
 
----
+### Common Commands
 
-## Usage Examples
+| Command | Description |
+| :--- | :--- |
+| `make dev` | Run full stack (API + UI) |
+| `make ingest` | Run PDF ingestion pipeline |
+| `make test` | Run backend tests |
+| `make fmt` | Format code |
 
-### Ingest New PDFs
-```bash
-# 1. Place PDFs in data/raw/
-# 2. Add metadata to SQLite (or use Excel import)
-python scripts/ingestion/import_excel.py path/to/metadata.xlsx
+### Repository Structure
 
-# 3. Run batched ingestion
-python scripts/ingestion/run_batched.py
-```
+- **`app/`**: FastAPI backend application
+- **`frontend/`**: Next.js user interface
+- **`rag/`**: Core RAG logic (Ingestion, Retrieval, Chains)
+- **`scripts/`**: Utility scripts for data processing
+- **`data/`**: Storage for raw PDFs and logs
 
-### Query the API
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What are best practices for cotton irrigation?"}'
-```
-
-### Verify Pipeline
-```bash
-python scripts/utils/verify_pipeline.py
-```
-
----
-
-## Development
-
-```bash
-# Install dev dependencies
-pip install -r requirements.txt
-
-# Run tests
-pytest tests/
-
-# Lint
-ruff check .
-
-# Format
-ruff format .
-```
-
----
-
-## Troubleshooting
-
-**Ingestion crashes (CPU/RAM spike)?**
-- Use batched ingestion: `run_batched.py` (processes 5 docs at a time)
-- Set `DOCLING_DEVICE=cpu` in `.env` (disables MPS acceleration)
-
-**No images extracted?**
-- Check logs for `DEBUG: ITEM: label=...` to see actual Docling labels
-- Docling might not detect images in scanned PDFs
-
-**Import errors after reorganization?**
-- Updated structure: `rag/ingest/parsers/`, `rag/ingest/chunkers/`
-- Old imports from `rag/ingest_lib/` or `rag/segment/` will fail
-
----
-
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE)
-
----
-
-## Acknowledgments
-
-- **CRDC** for providing research data
-- **IBM Docling** for advanced PDF parsing
-- **OpenAI** for embeddings and LLMs
-- **LangChain** for RAG orchestration
