@@ -24,6 +24,14 @@ exclude_patterns:
   - "(?i)flyer"
   - "(?i)poster"
 
+# Parser config
+parser: "azure"
+
+# Storage config
+storage:
+  type: "postgres"
+  table_name: "chunks"
+
 timeout_secs: 20
 # concurrency key kept for future use; current code is polite single-thread
 concurrency: 4

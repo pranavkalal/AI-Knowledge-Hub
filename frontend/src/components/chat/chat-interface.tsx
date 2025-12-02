@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Bot, User, AlertCircle, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE, Citation } from "@/lib/api";
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 interface ChatInterfaceProps {
     initialQuery: string;
-    onCitationClick: (docId: string) => void;
+    onCitationClick: (docId: string, page?: number, bbox?: number[]) => void;
 }
 
 interface Message {
@@ -100,37 +101,43 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                 if (done) break;
 
                 buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split("\n\n");
+
+                // Split by newline to handle data: ... lines
+                // This is more robust than splitting by \n\n which might fail if chunks are split weirdly
+                const lines = buffer.split("\n");
+
+                // Keep the last line in the buffer as it might be incomplete
                 buffer = lines.pop() || "";
 
                 for (const line of lines) {
-                    if (line.startsWith("data: ")) {
-                        const dataStr = line.slice(6);
-                        if (dataStr === "[DONE]") continue;
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine || !trimmedLine.startsWith("data: ")) continue;
 
-                        try {
-                            const data = JSON.parse(dataStr);
+                    const dataStr = trimmedLine.slice(6);
+                    if (dataStr === "[DONE]") continue;
 
-                            if (data.type === "token") {
-                                currentContent += data.token;
-                                setMessages((prev) => prev.map(msg =>
-                                    msg.id === aiMsgId
-                                        ? { ...msg, content: currentContent }
-                                        : msg
-                                ));
-                            } else if (data.type === "sources") {
-                                currentCitations = data.data;
-                                setMessages((prev) => prev.map(msg =>
-                                    msg.id === aiMsgId
-                                        ? { ...msg, citations: currentCitations }
-                                        : msg
-                                ));
-                            } else if (data.type === "error") {
-                                throw new Error(data.message);
-                            }
-                        } catch (e) {
-                            console.warn("Failed to parse SSE message:", e);
+                    try {
+                        const data = JSON.parse(dataStr);
+
+                        if (data.type === "token") {
+                            currentContent += data.token;
+                            setMessages((prev) => prev.map(msg =>
+                                msg.id === aiMsgId
+                                    ? { ...msg, content: currentContent }
+                                    : msg
+                            ));
+                        } else if (data.type === "sources") {
+                            currentCitations = data.data;
+                            setMessages((prev) => prev.map(msg =>
+                                msg.id === aiMsgId
+                                    ? { ...msg, citations: currentCitations }
+                                    : msg
+                            ));
+                        } else if (data.type === "error") {
+                            throw new Error(data.message);
                         }
+                    } catch (e) {
+                        console.warn("Failed to parse SSE message:", e);
                     }
                 }
             }
@@ -154,7 +161,14 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
     return (
         <div className="flex h-full flex-col bg-white relative">
             <ScrollArea className="flex-1 px-4 sm:px-0">
-                <div className="flex flex-col space-y-8 pb-32 pt-20 max-w-3xl mx-auto">
+                <div className="flex flex-col space-y-8 pb-32 pt-8 max-w-3xl mx-auto">
+                    {/* Logo Area */}
+                    <div className="flex justify-start mb-4">
+                        <Link href="/" className="block transition-opacity hover:opacity-80">
+                            <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
+                        </Link>
+                    </div>
+
                     <AnimatePresence initial={false}>
                         {messages.map((msg) => (
                             <motion.div
@@ -194,7 +208,7 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                                                     key={cite.sid}
                                                     whileHover={{ scale: 1.05 }}
                                                     whileTap={{ scale: 0.95 }}
-                                                    onClick={() => onCitationClick(cite.doc_id)}
+                                                    onClick={() => onCitationClick(cite.doc_id, cite.page, cite.bbox)}
                                                     title={cite.doc_id}
                                                     className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:border-slate-300"
                                                 >

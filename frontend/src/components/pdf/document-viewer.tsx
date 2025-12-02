@@ -18,6 +18,8 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
     useEffect(() => {
+        console.log(`[DocumentViewer] docId=${docId}, page=${page}, bbox=${bbox}`);
+
         // Construct PDF URL
         // Assuming backend is at 127.0.0.1:8000 based on setup
         // In production, this should use an env var
@@ -27,7 +29,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
         if (page) {
             setCurrentPage(page);
         }
-    }, [docId, page]);
+    }, [docId, page, bbox]);
 
     const handleZoomIn = () => setZoom(prev => Math.min(prev + 25, 200));
     const handleZoomOut = () => setZoom(prev => Math.max(prev - 25, 50));
@@ -46,14 +48,14 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
     return (
         <div className="flex h-full flex-col bg-slate-50 border-l">
             {/* Toolbar */}
-            <div className="flex items-center justify-between border-b bg-white p-2 px-4">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-slate-700">Source Viewer</span>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            <div className="flex items-center justify-between border-b bg-white p-2 px-4 gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Source Viewer</span>
+                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500 truncate" title={docId}>
                         {docId}
                     </span>
                     {page && (
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 font-medium">
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 font-medium whitespace-nowrap">
                             Page {currentPage}
                         </span>
                     )}
@@ -128,7 +130,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                             url={pdfUrl}
                             page={currentPage}
                             scale={zoom / 100}
-                            bbox={bbox}
+                            bbox={currentPage === page ? bbox : undefined}
                         />
                     </div>
                 ) : (

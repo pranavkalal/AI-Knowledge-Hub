@@ -48,7 +48,7 @@ from app.adapters.vector_faiss import FaissStoreAdapter
 
 # Rerankers
 from app.adapters.rerank_noop import NoopReranker
-from app.adapters.rerank_bge import BGERerankerAdapter  # requires sentence-transformers
+# from app.adapters.rerank_bge import BGERerankerAdapter  # moved to lazy import
 from app.adapters.rerank_openai import OpenAIRerankerAdapter
 
 # LLMs
@@ -121,6 +121,7 @@ def build_pipeline(cfg_path: str = None):
     rr_cfg = cfg.get("reranker", {})
     rr_adapter = (rr_cfg.get("adapter") or "none").lower()
     if rr_adapter in ("bge_reranker", "bge-reranker", "bge"):
+        from app.adapters.rerank_bge import BGERerankerAdapter
         rr_model = rr_cfg.get("model", "BAAI/bge-reranker-base")
         rr_topn = rr_cfg.get("topn")
         rr_batch = rr_cfg.get("batch_size")

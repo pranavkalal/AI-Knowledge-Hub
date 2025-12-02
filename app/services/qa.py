@@ -167,7 +167,7 @@ class QAPipeline:
 
         return {"answer": answer, "sources": citations, "usage": usage}
 
-    def stream(
+    async def stream(
         self,
         question: str,
         k: int = 6,
@@ -257,6 +257,12 @@ class QAPipeline:
             citation.setdefault("source_url", md.get("source_url"))
             rel_path = md.get("rel_path") or md.get("filename")
             if rel_path: citation.setdefault("rel_path", rel_path)
+            
+            # Construct local URL if missing
+            if not citation.get("url") and (citation.get("filename") or citation.get("rel_path")):
+                fname = citation.get("filename") or citation.get("rel_path")
+                citation["url"] = f"/api/pdf/{fname}"
+                
             citations.append(citation)
 
         # Yield sources first

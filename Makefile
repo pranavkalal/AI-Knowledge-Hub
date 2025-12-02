@@ -3,6 +3,8 @@
 #  Purpose: RAG Pipeline & Web Application
 # -------------------------------
 
+PYTHON=/Users/viking/.venv311/bin/python
+
 .PHONY: help install dev api ui ingest reindex clean test fmt
 
 # Default target
@@ -23,7 +25,7 @@ help:
 # -------------------------------
 install:
 	@echo "📦 Installing Backend Dependencies..."
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 	@echo "📦 Installing Frontend Dependencies..."
 	cd frontend && npm install
 
@@ -40,7 +42,7 @@ dev:
 
 api:
 	@echo "🔌 Starting FastAPI Backend..."
-	python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+	$(PYTHON) -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ui:
 	@echo "💻 Starting Next.js Frontend..."
@@ -50,13 +52,13 @@ ui:
 # Data Pipeline
 # -------------------------------
 ingest:
-	@echo "📄 Starting Batched Ingestion..."
-	python scripts/ingestion/run_batched.py
+	@echo "📄 Starting Azure/Postgres Ingestion..."
+	PYTHONPATH=. $(PYTHON) app/ingest.py
 
 reindex:
 	@echo "🔍 Rebuilding Search Index..."
-	python -m scripts.indexing.build_embeddings --chunks data/staging/chunks.jsonl --out_vecs data/embeddings/embeddings.npy --out_ids data/embeddings/ids.npy --model text-embedding-3-small --adapter openai --batch 256 --normalize
-	python scripts/indexing/build_faiss.py --embeddings data/embeddings/embeddings.npy --ids data/embeddings/ids.npy --out_index data/index/faiss.index
+	$(PYTHON) -m scripts.indexing.build_embeddings --chunks data/staging/chunks.jsonl --out_vecs data/embeddings/embeddings.npy --out_ids data/embeddings/ids.npy --model text-embedding-3-small --adapter openai --batch 256 --normalize
+	$(PYTHON) -m scripts.indexing.build_faiss --embeddings data/embeddings/embeddings.npy --ids data/embeddings/ids.npy --out_index data/embeddings/vectors.faiss
 
 # -------------------------------
 # Maintenance

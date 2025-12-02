@@ -140,6 +140,7 @@ def chunk_record_semantic(
         "title": rec.get("title"),
         "year": rec.get("year"),
         "page": rec.get("page"),
+        "bbox": rec.get("bbox"),
     }
     
     chunks: List[Dict] = []

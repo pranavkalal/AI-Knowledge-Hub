@@ -115,7 +115,24 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
         rel_path = s.get("rel_path") or s.get("filename")
         
         # Extract bbox if available (for deep linking)
+        # Extract bbox if available (for deep linking)
+        # DB stores 'bboxes' (list of dicts with 'polygon'), we want 'bbox' [x, y, w, h]
         bbox = s.get("bbox")
+        bboxes = s.get("bboxes")
+        
+        if not bbox and bboxes and isinstance(bboxes, list) and len(bboxes) > 0:
+            # Take the first bbox as a fallback/default highlight
+            first_bbox = bboxes[0]
+            if isinstance(first_bbox, dict) and "polygon" in first_bbox:
+                poly = first_bbox["polygon"]
+                if isinstance(poly, list) and len(poly) >= 8:
+                    # Convert 8-point polygon to [x, y, w, h]
+                    xs = poly[0::2]
+                    ys = poly[1::2]
+                    min_x, max_x = min(xs), max(xs)
+                    min_y, max_y = min(ys), max(ys)
+                    bbox = [min_x, min_y, max_x - min_x, max_y - min_y]
+
         if bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
             # Ensure all values are floats
             try:
@@ -145,6 +162,12 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 span=s.get("snippet") or s.get("span") or s.get("preview"),
             )
         )
+        
+        # Construct local URL if missing
+        if not citations[-1].url and (citations[-1].filename or citations[-1].rel_path):
+            fname = citations[-1].filename or citations[-1].rel_path
+            # Use the filename endpoint
+            citations[-1].url = f"/api/pdf/{fname}"
 
     latency_ms = int((perf_counter() - t0) * 1000)
     return AskResponse(

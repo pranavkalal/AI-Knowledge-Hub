@@ -1,54 +1,85 @@
 # rag/ingest_lib/parser_azure.py
 import os
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
-from azure.ai.formrecognizer import DocumentAnalysisClient
+from dataclasses import dataclass, field, asdict
+from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
 
 @dataclass
-class ParsedDoc:
+class PageObject:
+    page_number: int
     text: str
-    meta: Dict[str, Any] = field(default_factory=dict)
-    tables: List[Dict[str, Any]] = field(default_factory=list)
+    width: float
+    height: float
+    bboxes: List[Dict[str, Any]] = field(default_factory=list)
 
-def parse_pdf(pdf_path: str, extra_meta: Optional[Dict[str, Any]] = None) -> ParsedDoc:
-    """
-    Parse a PDF using Azure Document Intelligence (Layout model).
-    """
-    endpoint = os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
-    key = os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+class AzureParser:
+    def __init__(self):
+        self.endpoint = os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+        self.key = os.environ.get("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 
-    if not endpoint or not key:
-        raise ValueError("Missing Azure Document Intelligence credentials (AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT, AZURE_DOCUMENT_INTELLIGENCE_KEY)")
+        if not self.endpoint or not self.key:
+            raise ValueError("Missing Azure Document Intelligence credentials")
 
-    client = DocumentAnalysisClient(endpoint=endpoint, credential=AzureKeyCredential(key))
+        # Initialize with specific preview API version for Markdown support
+        self.client = DocumentIntelligenceClient(
+            endpoint=self.endpoint, 
+            credential=AzureKeyCredential(self.key),
+            api_version="2023-10-31-preview"
+        )
 
-    with open(pdf_path, "rb") as f:
-        poller = client.begin_analyze_document("prebuilt-layout", document=f)
-        result = poller.result()
+    def parse(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse PDF and return list of page objects using Markdown format.
+        """
+        with open(pdf_path, "rb") as f:
+            # Strict requirement: output_content_format="markdown"
+            # We do NOT use fallback. If this fails, it should error out.
+            poller = self.client.begin_analyze_document(
+                "prebuilt-layout", 
+                body=f,
+                content_type="application/octet-stream",
+                output_content_format="markdown"
+            )
+            
+            result = poller.result()
 
-    # Extract text
-    full_text = result.content
+        pages_output = []
+        
+        # Result content is the full markdown text
+        full_content = result.content
+        
+        for page in result.pages:
+            # 1. Extract Markdown text for this page using spans
+            page_text_parts = []
+            if page.spans:
+                for span in page.spans:
+                    # span has offset and length
+                    if span.offset + span.length <= len(full_content):
+                        page_text_parts.append(full_content[span.offset : span.offset + span.length])
+            
+            page_text = "".join(page_text_parts)
+            
+            # 2. Extract lines and bboxes (polygons)
+            lines_data = []
+            if page.lines:
+                for line in page.lines:
+                    # line.polygon is a list of coordinates
+                    lines_data.append({
+                        "text": line.content,
+                        "polygon": line.polygon
+                    })
 
-    # Extract tables
-    tables = []
-    for table in result.tables:
-        t_data = {
-            "row_count": table.row_count,
-            "column_count": table.column_count,
-            "cells": []
-        }
-        for cell in table.cells:
-            t_data["cells"].append({
-                "row_index": cell.row_index,
-                "column_index": cell.column_index,
-                "content": cell.content,
-            })
-        tables.append(t_data)
-
-    # Metadata
-    meta = extra_meta or {}
-    meta["filename"] = os.path.basename(pdf_path)
-    meta["page_count"] = len(result.pages)
-    
-    return ParsedDoc(text=full_text, meta=meta, tables=tables)
+            # 3. Construct Page Object
+            # Ensure page_number is 1-indexed from Azure response
+            page_obj = PageObject(
+                page_number=page.page_number, 
+                text=page_text,
+                width=page.width,
+                height=page.height,
+                bboxes=lines_data
+            )
+            
+            pages_output.append(asdict(page_obj))
+            
+        return pages_output

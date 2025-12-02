@@ -37,7 +37,17 @@ def get_pdf_filename(doc_id: str) -> Optional[str]:
         pass
 
     # Fallback to default
-    return _default_filename(doc_id)
+    filename = _default_filename(doc_id)
+    if filename:
+        return filename
+        
+    # Try stripping chunk suffix (e.g. _p1_0)
+    # Format is {doc_id}_p{page}_{index}
+    if "_p" in doc_id:
+        base_id = doc_id.rsplit("_p", 1)[0]
+        return _default_filename(base_id)
+        
+    return None
 
 
 def build_pdf_url(doc_id: str, page: Optional[int] = None, filename: Optional[str] = None) -> Optional[str]:
@@ -51,7 +61,11 @@ def build_pdf_url(doc_id: str, page: Optional[int] = None, filename: Optional[st
     if not filename:
         return None
         
-    base = f"/pdf/by-id/{doc_id}"
+    if filename:
+        base = f"/api/pdf/{filename}"
+    else:
+        base = f"/pdf/by-id/{doc_id}"
+        
     if page is None:
         return base
     page_num = max(1, int(page))

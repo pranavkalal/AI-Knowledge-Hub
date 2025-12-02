@@ -117,6 +117,70 @@ class PostgresStoreAdapter:
 
         return self.search_hybrid(query_text, embedding, top_k, filters)
 
+    def query(self, query_vector: List[float], k: int, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Vector-only search implementation for VectorStorePort compatibility.
+        """
+        return self.search_with_vector(query_vector, k, filters=kwargs.get("filters"))
+
+    def search_with_vector(self, embedding: List[float], top_k: int = 10, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """
+        Pure vector search using pgvector.
+        """
+        session = self.Session()
+        try:
+            # Build WHERE clause for filters
+            where_clauses = []
+            params = {
+                "embedding": str(embedding),
+                "top_k": top_k
+            }
+            
+            if filters:
+                if "doc_id" in filters:
+                    where_clauses.append("doc_id = :filter_doc_id")
+                    params["filter_doc_id"] = filters["doc_id"]
+                
+                if "year_min" in filters:
+                    where_clauses.append("(metadata->>'year')::int >= :year_min")
+                    params["year_min"] = filters["year_min"]
+                    
+                if "year_max" in filters:
+                    where_clauses.append("(metadata->>'year')::int <= :year_max")
+                    params["year_max"] = filters["year_max"]
+
+            where_sql = " AND ".join(where_clauses)
+            if where_sql:
+                where_sql = "WHERE " + where_sql
+            else:
+                where_sql = ""
+
+            stmt = text(f"""
+                SELECT id, doc_id, chunk_index, text, metadata,
+                       1 - (embedding <=> :embedding) as score
+                FROM {self.table_name}
+                {where_sql}
+                ORDER BY embedding <=> :embedding
+                LIMIT :top_k
+            """)
+            
+            result = session.execute(stmt, params)
+            
+            hits = []
+            for row in result:
+                hit = {
+                    "id": row.id,
+                    "doc_id": row.doc_id,
+                    "chunk_index": row.chunk_index,
+                    "text": row.text,
+                    "score": float(row.score),
+                    "metadata": row.metadata
+                }
+                hits.append(hit)
+            return hits
+        finally:
+            session.close()
+
     def search_hybrid(self, query_text: str, embedding: List[float], top_k: int = 10, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         session = self.Session()
         try:

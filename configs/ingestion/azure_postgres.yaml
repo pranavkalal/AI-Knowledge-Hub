@@ -2,8 +2,8 @@
 # Ingestion config for Azure Document Intelligence + PostgreSQL
 
 seed_urls:
-  - "https://www.cancer.gov/research/nci-role/2023-annual-plan-budget-proposal.pdf"
-  # Add your 10-15 PDF URLs here
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
+  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023+Final+Reports+%28266358%29"
 
 include_patterns:
   - '\.pdf$'
@@ -22,4 +22,6 @@ output:
   jsonl: "data/staging/azure_chunks.jsonl"
   csv: "data/staging/azure_index.csv"
 
-download_dir: "data/downloads"
+download_dir: "data/raw"
+
+limit: 15
