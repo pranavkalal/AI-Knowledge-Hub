@@ -251,7 +251,6 @@ def main():
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         
         all_chunks = []
-        all_chunks = []
         for rec in records:
             # rec["parsed"] is now a list of page dicts (from AzureParser.parse)
             pages = rec.get("parsed")
