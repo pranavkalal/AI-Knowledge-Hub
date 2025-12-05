@@ -2,10 +2,9 @@
 app/factory.py
 
 Factory to build a Q&A pipeline from YAML runtime config.
-- Swaps providers by config (no code edits).
-- Supports: OpenAI or Ollama for LLM; Noop or BGE cross-encoder for reranking.
+- Uses OpenAI for LLM and embeddings
+- Uses Postgres with pgvector for vector store
 - Optional orchestrator toggle: native pipeline vs LangChain chain.
-- Validates key files so failures happen at startup, not in a meeting.
 """
 
 from __future__ import annotations
@@ -44,21 +43,14 @@ from app.services.qa import QAPipeline
 
 # Adapter loaders / vector store
 from app.adapters.loader import load_embedder
-from app.adapters.vector_faiss import FaissStoreAdapter
+from app.adapters.vector_postgres import PostgresStoreAdapter
 
 # Rerankers
 from app.adapters.rerank_noop import NoopReranker
-# from app.adapters.rerank_bge import BGERerankerAdapter  # moved to lazy import
 from app.adapters.rerank_openai import OpenAIRerankerAdapter
 
 # LLMs
 from app.adapters.llm_openai import OpenAIAdapter
-
-try:
-    # optional local LLM
-    from app.adapters.llm_ollama import OllamaAdapter
-except Exception:
-    OllamaAdapter = None  # graceful fallback
 
 
 def _require_file(path: str | Path, label: str) -> None:
@@ -87,54 +79,18 @@ def build_pipeline(cfg_path: str = None):
     # ---------------- Embeddings ----------------
     emb = load_embedder(cfg.get("embedder"), os.environ)
 
-    # ---------------- Vector Store ----------------
-    # ---------------- Vector Store ----------------
+    # ---------------- Vector Store (Postgres) ----------------
     vs_cfg = cfg.get("vector_store", {})
-    vs_type = vs_cfg.get("type", "faiss").lower()
-    
-    if vs_type == "postgres":
-        from app.adapters.vector_postgres import PostgresStoreAdapter
-        store = PostgresStoreAdapter(
-            table_name=vs_cfg.get("table_name", "chunks"),
-            connection_string=os.environ.get("POSTGRES_CONNECTION_STRING"),
-            embedder=emb
-        )
-    else:
-        # Default to FAISS
-        index_path = vs_cfg.get("path", "data/embeddings/vectors.faiss")
-        ids_path = vs_cfg.get("ids", "data/embeddings/ids.npy")
-        meta_path = vs_cfg.get("meta", "data/staging/chunks.jsonl")
-
-        _require_file(index_path, "FAISS index")
-        _require_file(ids_path, "IDs numpy file")
-        _require_file(meta_path, "Chunks metadata JSONL")
-
-        store = FaissStoreAdapter(
-            index_path=index_path,
-            ids_path=ids_path,
-            meta_path=meta_path,
-            embed_model=cfg.get("embedder", {}).get("model") if isinstance(cfg.get("embedder"), dict) else None,
-            embed_config=cfg.get("embedder") if isinstance(cfg.get("embedder"), dict) else None,
-        )
+    store = PostgresStoreAdapter(
+        table_name=vs_cfg.get("table_name", "chunks"),
+        connection_string=os.environ.get("POSTGRES_CONNECTION_STRING"),
+        embedder=emb
+    )
 
     # ---------------- Reranker ----------------
     rr_cfg = cfg.get("reranker", {})
     rr_adapter = (rr_cfg.get("adapter") or "none").lower()
-    if rr_adapter in ("bge_reranker", "bge-reranker", "bge"):
-        from app.adapters.rerank_bge import BGERerankerAdapter
-        rr_model = rr_cfg.get("model", "BAAI/bge-reranker-base")
-        rr_topn = rr_cfg.get("topn")
-        rr_batch = rr_cfg.get("batch_size")
-        rr_max_len = rr_cfg.get("max_length")
-        rr_device = rr_cfg.get("device")
-        reranker = BGERerankerAdapter(
-            model_name=rr_model,
-            topn=int(rr_topn) if rr_topn is not None else 50,
-            batch_size=int(rr_batch) if rr_batch is not None else 16,
-            max_length=int(rr_max_len) if rr_max_len is not None else 256,
-            device=rr_device,
-        )
-    elif rr_adapter in ("openai", "openai_reranker", "openai-reranker"):
+    if rr_adapter in ("openai", "openai_reranker", "openai-reranker"):
         rr_model = rr_cfg.get("model", "text-embedding-3-large")
         rr_topn = rr_cfg.get("topn")
         rr_max_candidates = rr_cfg.get("max_candidates")
@@ -154,24 +110,10 @@ def build_pipeline(cfg_path: str = None):
     else:
         reranker = NoopReranker()
 
-    # ---------------- LLM ----------------
+    # ---------------- LLM (OpenAI) ----------------
     llm_cfg = cfg.get("llm", {})
-    llm_adapter = (llm_cfg.get("adapter") or "openai").lower()
-
-    if llm_adapter == "openai":
-        model = llm_cfg.get("model", "gpt-4o-mini")
-        llm = OpenAIAdapter(model=model)
-
-    elif llm_adapter == "ollama":
-        if OllamaAdapter is None:
-            raise RuntimeError(
-                "llm.adapter=ollama but app.adapters.llm_ollama not available. "
-                "Add the adapter file or switch adapter."
-            )
-        model = llm_cfg.get("model", "llama3.1")
-        llm = OllamaAdapter(model=model)
-    else:
-        raise ValueError(f"Unknown llm.adapter: {llm_adapter}")
+    model = llm_cfg.get("model", "gpt-4o-mini")
+    llm = OpenAIAdapter(model=model)
 
     # ---------------- Orchestrator toggle ----------------
     orchestrator = (cfg.get("orchestrator") or "native").lower()

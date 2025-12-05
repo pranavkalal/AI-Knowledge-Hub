@@ -5,7 +5,7 @@
 
 PYTHON=/Users/viking/.venv311/bin/python
 
-.PHONY: help install dev api ui ingest reindex clean test fmt
+.PHONY: help install dev api ui ingest clean test fmt
 
 # Default target
 help:
@@ -14,8 +14,7 @@ help:
 	@echo "  make dev        - Run both Backend and Frontend in parallel"
 	@echo "  make api        - Run Backend API only (port 8000)"
 	@echo "  make ui         - Run Frontend UI only (port 3000)"
-	@echo "  make ingest     - Run robust batched PDF ingestion"
-	@echo "  make reindex    - Rebuild FAISS index from existing chunks"
+	@echo "  make ingest     - Run PDF ingestion (Azure + Postgres)"
 	@echo "  make clean      - Clean up temporary files and caches"
 	@echo "  make test       - Run backend tests"
 	@echo "  make fmt        - Format code (ruff)"
@@ -54,11 +53,6 @@ ui:
 ingest:
 	@echo "📄 Starting Azure/Postgres Ingestion..."
 	PYTHONPATH=. $(PYTHON) app/ingest.py
-
-reindex:
-	@echo "🔍 Rebuilding Search Index..."
-	$(PYTHON) -m scripts.indexing.build_embeddings --chunks data/staging/chunks.jsonl --out_vecs data/embeddings/embeddings.npy --out_ids data/embeddings/ids.npy --model text-embedding-3-small --adapter openai --batch 256 --normalize
-	$(PYTHON) -m scripts.indexing.build_faiss --embeddings data/embeddings/embeddings.npy --ids data/embeddings/ids.npy --out_index data/embeddings/vectors.faiss
 
 # -------------------------------
 # Maintenance

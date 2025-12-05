@@ -142,11 +142,13 @@ class PostgresStoreAdapter:
                     params["filter_doc_id"] = filters["doc_id"]
                 
                 if "year_min" in filters:
-                    where_clauses.append("(metadata->>'year')::int >= :year_min")
+                    # Use NULLIF to handle empty strings, COALESCE for nulls
+                    where_clauses.append("COALESCE(NULLIF(metadata->>'year', '')::int, 0) >= :year_min")
                     params["year_min"] = filters["year_min"]
                     
                 if "year_max" in filters:
-                    where_clauses.append("(metadata->>'year')::int <= :year_max")
+                    # Use NULLIF to handle empty strings, COALESCE for nulls  
+                    where_clauses.append("COALESCE(NULLIF(metadata->>'year', '')::int, 9999) <= :year_max")
                     params["year_max"] = filters["year_max"]
 
             where_sql = " AND ".join(where_clauses)
@@ -198,11 +200,13 @@ class PostgresStoreAdapter:
                     params["filter_doc_id"] = filters["doc_id"]
                 
                 if "year_min" in filters:
-                    where_clauses.append("(metadata->>'year')::int >= :year_min")
+                    # Use NULLIF to handle empty strings, COALESCE for nulls
+                    where_clauses.append("COALESCE(NULLIF(metadata->>'year', '')::int, 0) >= :year_min")
                     params["year_min"] = filters["year_min"]
                     
                 if "year_max" in filters:
-                    where_clauses.append("(metadata->>'year')::int <= :year_max")
+                    # Use NULLIF to handle empty strings, COALESCE for nulls
+                    where_clauses.append("COALESCE(NULLIF(metadata->>'year', '')::int, 9999) <= :year_max")
                     params["year_max"] = filters["year_max"]
                     
                 if "contains" in filters:

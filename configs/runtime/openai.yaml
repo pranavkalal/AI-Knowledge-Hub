@@ -12,10 +12,8 @@ embedder:
   retry_backoff: 2.0
 
 vector_store:
-  adapter: faiss_local
-  path: data/embeddings/vectors.faiss
-  ids: data/embeddings/ids.npy
-  meta: data/staging/chunks.jsonl
+  type: postgres
+  table_name: chunks
 
 reranker:
   adapter: openai_reranker
@@ -42,9 +40,7 @@ retrieval:
   diversify_per_doc: true
   max_preview_chars: 2400
   max_snippet_chars: 1600
-  filters:
-    year_min: 2019
-    year_max: 2025
+  filters: {}
   use_multiquery: false
   use_compression: false
 
