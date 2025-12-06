@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, AlertCircle, Sparkles } from "lucide-react";
+import { Send, Bot, User, AlertCircle, Sparkles, Calendar } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -29,6 +29,7 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
     const [query, setQuery] = useState(initialQuery);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [yearFilter, setYearFilter] = useState<string>("all");
     const scrollRef = useRef<HTMLDivElement>(null);
     const hasInitialized = useRef(false);
     const abortController = useRef<AbortController | null>(null);
@@ -82,7 +83,8 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                     question: text,
                     k: 5,
                     mode: "dense",
-                    rerank: true
+                    rerank: true,
+                    filters: yearFilter !== "all" ? { year_min: parseInt(yearFilter), year_max: parseInt(yearFilter) } : undefined
                 }),
                 signal: abortController.current.signal
             });
@@ -201,23 +203,38 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                                         )}
                                     </div>
 
-                                    {msg.citations && msg.citations.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mt-2">
-                                            {msg.citations.map((cite, i) => (
-                                                <motion.button
-                                                    key={cite.sid}
-                                                    whileHover={{ scale: 1.05 }}
-                                                    whileTap={{ scale: 0.95 }}
-                                                    onClick={() => onCitationClick(cite.doc_id, cite.page, cite.bbox)}
-                                                    title={cite.doc_id}
-                                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:border-slate-300"
-                                                >
-                                                    <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-500">{i + 1}</span>
-                                                    <span className="truncate max-w-[150px]">{cite.doc_id}</span>
-                                                </motion.button>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {msg.citations && msg.citations.length > 0 && (() => {
+                                        // Group citations by doc_id, take first citation per doc, limit to 3 sources
+                                        const uniqueDocs = new Map<string, typeof msg.citations[0]>();
+                                        for (const cite of msg.citations) {
+                                            const docId = cite.doc_id || 'unknown';
+                                            if (!uniqueDocs.has(docId) && uniqueDocs.size < 3) {
+                                                uniqueDocs.set(docId, cite);
+                                            }
+                                        }
+
+                                        return (
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                {Array.from(uniqueDocs.entries()).map(([docId, cite]) => {
+                                                    // Clean up doc title
+                                                    const title = docId.replace(/_/g, ' ').replace(/\d+$/, '').trim();
+                                                    const shortTitle = title.length > 45 ? title.slice(0, 42) + '...' : title;
+
+                                                    return (
+                                                        <motion.button
+                                                            key={docId}
+                                                            whileHover={{ scale: 1.02 }}
+                                                            whileTap={{ scale: 0.98 }}
+                                                            onClick={() => onCitationClick(cite.doc_id, cite.page, cite.bbox)}
+                                                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700"
+                                                        >
+                                                            {shortTitle}
+                                                        </motion.button>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </motion.div>
                         ))}
@@ -243,6 +260,19 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                                 className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none h-auto py-1"
                             />
                             <div className="flex items-center space-x-2">
+                                <div className="relative">
+                                    <select
+                                        value={yearFilter}
+                                        onChange={(e) => setYearFilter(e.target.value)}
+                                        className="appearance-none bg-white border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm text-slate-600 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                                    >
+                                        <option value="all">All Years</option>
+                                        <option value="2024">2024</option>
+                                        <option value="2023">2023</option>
+                                        <option value="2022">2022</option>
+                                    </select>
+                                    <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                                </div>
                                 <Button
                                     type="submit"
                                     size="icon"

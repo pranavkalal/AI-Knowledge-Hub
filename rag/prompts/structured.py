@@ -121,6 +121,28 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
 
         lines.append(f"[{sid}] {title}{suffix}: {snippet}")
 
+        # Calculate bbox from bboxes if available
+        bboxes = meta.get("bboxes")
+        bbox = None
+        if bboxes and isinstance(bboxes, list) and len(bboxes) > 0:
+            # Union all bboxes to get bounding rectangle
+            all_x, all_y = [], []
+            for item in bboxes:
+                poly = item.get("polygon") if isinstance(item, dict) else None
+                if poly and isinstance(poly, list) and len(poly) >= 4:
+                    all_x.extend(poly[0::2])  # x coords
+                    all_y.extend(poly[1::2])  # y coords
+            if all_x and all_y:
+                # Convert from inches to points (72 per inch)
+                min_x, max_x = min(all_x), max(all_x)
+                min_y, max_y = min(all_y), max(all_y)
+                bbox = [
+                    min_x * 72,
+                    min_y * 72,
+                    (max_x - min_x) * 72,
+                    (max_y - min_y) * 72
+                ]
+
         citations.append(
             {
                 "sid": sid,
@@ -128,6 +150,7 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
                 "title": meta.get("title"),
                 "year": year,
                 "page": page,
+                "bbox": bbox,
                 "score": meta.get("score"),
                 "faiss_score": meta.get("faiss_score"),
                 "rerank_score": meta.get("rerank_score"),

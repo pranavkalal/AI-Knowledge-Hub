@@ -17,6 +17,7 @@ export interface Citation {
     page?: number;
     bbox?: number[]; // [x, y, w, h] - Future proofing for Deep Linking
     text?: string;
+    score?: number;  // Confidence score (0-1)
 }
 
 export interface AskResponse {

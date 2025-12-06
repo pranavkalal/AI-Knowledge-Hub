@@ -174,7 +174,7 @@ def resolve_retrieval_settings(filters: Optional[Dict[str, Any]]) -> RetrievalSe
     year_min = _to_int(filters.get("year_min"))
     year_max = _to_int(filters.get("year_max"))
     neighbors = _to_int(filters.get("neighbors"), default=1, minimum=0)
-    per_doc = _to_int(filters.get("per_doc"), default=1, minimum=0)
+    per_doc = _to_int(filters.get("per_doc"), default=2, minimum=0)  # Allow 2 chunks per doc
     diversify = filters.get("diversify_per_doc", True)
     if isinstance(diversify, str):
         diversify = diversify.lower() not in {"false", "0", "no"}
@@ -234,7 +234,15 @@ def prepare_hits(
         base_meta = lookup.get(chunk_id, md)
         meta = dict(base_meta) if isinstance(base_meta, dict) else {}
         meta["id"] = chunk_id
-        doc_id = meta.get("doc_id") or chunk_id.split("_chunk")[0]
+        # Handle both formats: {doc_id}_chunk{N} and {doc_id}_p{page}_{index}
+        doc_id = meta.get("doc_id")
+        if not doc_id:
+            if "_chunk" in chunk_id:
+                doc_id = chunk_id.split("_chunk")[0]
+            elif "_p" in chunk_id:
+                doc_id = chunk_id.rsplit("_p", 1)[0]
+            else:
+                doc_id = chunk_id
         meta["doc_id"] = doc_id
 
         title = meta.get("title") or meta.get("doc_title") or doc_id or chunk_id

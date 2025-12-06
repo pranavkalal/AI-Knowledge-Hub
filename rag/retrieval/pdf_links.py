@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Remove JSONL dependency
-PDF_ROOT = Path(os.environ.get("PDF_ROOT", "data/raw")).resolve()
+PDF_ROOT = Path(os.environ.get("PDF_ROOT", "data/raw_ingest")).resolve()
 
 
 def _default_filename(doc_id: str) -> Optional[str]:

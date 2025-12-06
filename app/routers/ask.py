@@ -115,8 +115,10 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
         rel_path = s.get("rel_path") or s.get("filename")
         
         # Extract bbox if available (for deep linking)
-        # Extract bbox if available (for deep linking)
         # DB stores 'bboxes' (list of dicts with 'polygon'), we want 'bbox' [x, y, w, h]
+        # Azure DI coordinates are in INCHES, PDF.js expects POINTS (72 points per inch)
+        POINTS_PER_INCH = 72
+        
         bbox = s.get("bbox")
         bboxes = s.get("bboxes")
         
@@ -126,12 +128,18 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
             if isinstance(first_bbox, dict) and "polygon" in first_bbox:
                 poly = first_bbox["polygon"]
                 if isinstance(poly, list) and len(poly) >= 8:
-                    # Convert 8-point polygon to [x, y, w, h]
+                    # Convert 8-point polygon to [x, y, w, h] in POINTS
                     xs = poly[0::2]
                     ys = poly[1::2]
                     min_x, max_x = min(xs), max(xs)
                     min_y, max_y = min(ys), max(ys)
-                    bbox = [min_x, min_y, max_x - min_x, max_y - min_y]
+                    # Convert from inches to points
+                    bbox = [
+                        min_x * POINTS_PER_INCH,
+                        min_y * POINTS_PER_INCH,
+                        (max_x - min_x) * POINTS_PER_INCH,
+                        (max_y - min_y) * POINTS_PER_INCH
+                    ]
 
         if bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
             # Ensure all values are floats

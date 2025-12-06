@@ -1,9 +1,7 @@
 # configs/ingestion/azure_postgres.yaml
 # Ingestion config for Azure Document Intelligence + PostgreSQL
 
-seed_urls:
-  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
-  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023+Final+Reports+%28266358%29"
+seed_urls: []  # Not used - we process local PDFs
 
 include_patterns:
   - '\.pdf$'
@@ -22,6 +20,6 @@ output:
   jsonl: "data/staging/azure_chunks.jsonl"
   csv: "data/staging/azure_index.csv"
 
-download_dir: "data/raw"
+download_dir: "data/raw_ingest"  # Test subset
 
-limit: 15
+limit: 40  # Process up to 40 PDFs

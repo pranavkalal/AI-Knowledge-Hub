@@ -18,7 +18,11 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
     useEffect(() => {
-        console.log(`[DocumentViewer] docId=${docId}, page=${page}, bbox=${bbox}`);
+        console.log(`[DocumentViewer] Props received:`, { docId, page, bbox });
+        console.log(`[DocumentViewer] bbox type:`, typeof bbox, Array.isArray(bbox));
+        if (bbox) {
+            console.log(`[DocumentViewer] bbox values: x=${bbox[0]}, y=${bbox[1]}, w=${bbox[2]}, h=${bbox[3]}`);
+        }
 
         // Construct PDF URL
         // Assuming backend is at 127.0.0.1:8000 based on setup
