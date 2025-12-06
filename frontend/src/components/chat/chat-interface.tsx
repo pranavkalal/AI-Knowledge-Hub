@@ -3,16 +3,17 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, AlertCircle, Sparkles, Calendar } from "lucide-react";
+import { Send, Bot, User, AlertCircle, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_BASE, Citation } from "@/lib/api";
+import { API_BASE, Citation, PersonaType } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
 interface ChatInterfaceProps {
     initialQuery: string;
+    initialPersona?: PersonaType;
     onCitationClick: (docId: string, page?: number, bbox?: number[]) => void;
 }
 
@@ -25,11 +26,11 @@ interface Message {
     isStreaming?: boolean;
 }
 
-export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfaceProps) {
+export function ChatInterface({ initialQuery, initialPersona = "grower", onCitationClick }: ChatInterfaceProps) {
     const [query, setQuery] = useState(initialQuery);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [yearFilter, setYearFilter] = useState<string>("all");
+    const [persona, setPersona] = useState<PersonaType>(initialPersona);
     const scrollRef = useRef<HTMLDivElement>(null);
     const hasInitialized = useRef(false);
     const abortController = useRef<AbortController | null>(null);
@@ -84,7 +85,7 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                     k: 5,
                     mode: "dense",
                     rerank: true,
-                    filters: yearFilter !== "all" ? { year_min: parseInt(yearFilter), year_max: parseInt(yearFilter) } : undefined
+                    persona: persona
                 }),
                 signal: abortController.current.signal
             });
@@ -262,16 +263,15 @@ export function ChatInterface({ initialQuery, onCitationClick }: ChatInterfacePr
                             <div className="flex items-center space-x-2">
                                 <div className="relative">
                                     <select
-                                        value={yearFilter}
-                                        onChange={(e) => setYearFilter(e.target.value)}
+                                        value={persona}
+                                        onChange={(e) => setPersona(e.target.value as PersonaType)}
                                         className="appearance-none bg-white border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm text-slate-600 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                                     >
-                                        <option value="all">All Years</option>
-                                        <option value="2024">2024</option>
-                                        <option value="2023">2023</option>
-                                        <option value="2022">2022</option>
+                                        <option value="grower">🌱 Grower</option>
+                                        <option value="researcher">🔬 Researcher</option>
+                                        <option value="extension_officer">📋 Extension</option>
                                     </select>
-                                    <Calendar className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                                    <Users className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                                 </div>
                                 <Button
                                     type="submit"

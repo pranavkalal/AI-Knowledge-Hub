@@ -39,6 +39,9 @@ from rag.prompts.structured import (
 )
 from rag.retrievers import PortsRetriever
 
+# Import persona support
+from app.services.prompting import get_system_prompt, DEFAULT_PERSONA
+
 
 def _maybe_load_dotenv() -> None:
     if import_module is None:
@@ -150,8 +153,10 @@ def _adapter_llm_runnable(llm):
         sources_block = inputs.get("sources_block", "")
         temperature = float(inputs.get("temperature", 0.2))
         max_tokens = int(inputs.get("max_tokens", 600))
+        persona = inputs.get("persona") or DEFAULT_PERSONA
+        system_prompt = get_system_prompt(persona)
         user_prompt = USER_PROMPT_TEMPLATE.format(question=question, sources=sources_block)
-        answer, usage = llm.chat(SYSTEM_PROMPT, user_prompt, temperature, max_tokens)
+        answer, usage = llm.chat(system_prompt, user_prompt, temperature, max_tokens)
         return {"structured": None, "usage": usage, "answer": answer, "raw": answer}
 
     return RunnableLambda(_inner)
@@ -417,6 +422,7 @@ def build_chain(
             "temperature": RunnableLambda(lambda x: x.get("temperature", 0.2)),
             "max_tokens": RunnableLambda(lambda x: x.get("max_tokens", 600)),
             "k": RunnableLambda(lambda x: x.get("k")),
+            "persona": RunnableLambda(lambda x: x.get("persona", DEFAULT_PERSONA)),
         }
         | RunnableLambda(prepare_prompt_state)
         | RunnableLambda(lambda state: {**state, "messages": build_prompt_messages(state)})

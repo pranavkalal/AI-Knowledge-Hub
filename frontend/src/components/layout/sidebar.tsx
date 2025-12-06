@@ -35,10 +35,10 @@ export function Sidebar() {
 
     return (
         <motion.aside
-            initial={{ width: 280 }}
-            animate={{ width: isCollapsed ? 80 : 280 }}
+            initial={{ width: 220 }}
+            animate={{ width: isCollapsed ? 60 : 220 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="relative flex h-screen flex-col border-r bg-[#f0f4f9] py-4 text-slate-700"
+            className="sticky top-0 flex h-screen flex-col border-r bg-[#f0f4f9] py-4 text-slate-700 flex-shrink-0"
         >
             {/* Header / Toggle */}
             <div className="flex items-center px-4 mb-8">

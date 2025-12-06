@@ -39,6 +39,9 @@ class AskRequest(BaseModel):
     mode: Optional[str] = Field(default="dense")       # "dense" | "bm25" | "hybrid"
     rerank: Optional[bool] = False
     filters: Optional[AskFilters] = None
+    
+    # Persona selection for response style
+    persona: Optional[str] = Field(default="grower")   # "researcher" | "grower" | "extension_officer"
 
 class Citation(BaseModel):
     sid: Optional[str] = None
@@ -89,7 +92,7 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
         kwargs["rerank"] = bool(req.rerank)
 
     try:
-        out = pipe.ask(**kwargs)  # expected keys: "answer", "sources", optional "usage"
+        out = pipe.ask(**kwargs, persona=req.persona)  # expected keys: "answer", "sources", optional "usage"
     except Exception as e:
         # Log server-side for debugging; keep response clean
         # You can swap print for proper logging if you added it.
@@ -150,13 +153,23 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
         else:
             bbox = None
         
+        # Coerce year - empty string should be None
+        year_val = s.get("year")
+        if year_val == "" or year_val is None:
+            year_val = None
+        else:
+            try:
+                year_val = int(year_val)
+            except (TypeError, ValueError):
+                year_val = None
+        
         citations.append(
             Citation(
                 sid=s.get("sid"),
                 doc_id=s.get("doc_id"),
                 title=s.get("title"),
                 name=s.get("name"),
-                year=s.get("year"),
+                year=year_val,
                 page=page_val,
                 bbox=bbox,  # Add bbox for deep linking
                 url=s.get("url"),
@@ -212,7 +225,7 @@ async def ask_post(req: AskRequest, stream: bool = Query(False)):
 
     async def event_generator():
         try:
-            async for chunk in pipe.stream(question=question, temperature=req.temperature, max_tokens=req.max_output_tokens, **stream_kwargs):
+            async for chunk in pipe.stream(question=question, temperature=req.temperature, max_tokens=req.max_output_tokens, persona=req.persona, **stream_kwargs):
                 yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as exc:
             print("[/api/ask] stream error:", repr(exc))

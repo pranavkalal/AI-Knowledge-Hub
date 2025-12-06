@@ -2,14 +2,14 @@
 
 import { ChatInterface } from "@/components/chat/chat-interface";
 import { DocumentViewer } from "@/components/pdf/document-viewer";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { PersonaType } from "@/lib/api";
 
-import Link from "next/link";
-
-export default function ChatPage() {
+function ChatContent() {
     const searchParams = useSearchParams();
     const initialQuery = searchParams.get("q") || "";
+    const initialPersona = (searchParams.get("persona") as PersonaType) || "grower";
 
     // State to manage the split view
     interface ActiveDoc {
@@ -27,7 +27,7 @@ export default function ChatPage() {
         <div className="relative flex h-[calc(100vh-3.5rem)] overflow-hidden">
             {/* Left Panel: Chat */}
             <div className={`flex flex-col bg-background transition-all duration-300 ${activeDoc ? "w-1/2 border-r" : "w-full max-w-5xl mx-auto"}`}>
-                <ChatInterface initialQuery={initialQuery} onCitationClick={handleCitationClick} />
+                <ChatInterface initialQuery={initialQuery} initialPersona={initialPersona} onCitationClick={handleCitationClick} />
             </div>
 
             {/* Right Panel: PDF Viewer */}
@@ -44,3 +44,12 @@ export default function ChatPage() {
         </div>
     );
 }
+
+export default function ChatPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+            <ChatContent />
+        </Suspense>
+    );
+}
+

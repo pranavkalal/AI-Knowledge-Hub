@@ -6,7 +6,7 @@ Returns the generated answer and normalized source list for the API layer.
 from time import perf_counter
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
-from app.services.prompting import SYSTEM, build_user_prompt
+from app.services.prompting import get_system_prompt, build_user_prompt, allows_general_knowledge, DEFAULT_PERSONA
 from app.services.formatting import format_citation, format_metadata, format_snippet
 from rag.retrieval.utils import (
     resolve_retrieval_settings,
@@ -27,7 +27,8 @@ class QAPipeline:
         *,
         mode: Optional[str] = None,           # "dense" | "bm25" | "hybrid" (store may ignore)
         filters: Optional[Dict[str, Any]] = None,  # e.g., {"year_min": 2019, "year_max": 2025}
-        rerank: Optional[bool] = None         # True to force, False to skip, None = default behavior
+        rerank: Optional[bool] = None,        # True to force, False to skip, None = default behavior
+        persona: Optional[str] = None         # "researcher" | "grower" | "extension_officer"
     ) -> Dict:
         """
         Returns dict with keys: answer, sources, usage
@@ -129,8 +130,12 @@ class QAPipeline:
                 citation.setdefault("rel_path", rel_path)
             citations.append(citation)
 
-        user = build_user_prompt(q, "\n\n".join(lines))
-        answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+        # Get persona-specific prompt configuration
+        active_persona = persona or DEFAULT_PERSONA
+        system_prompt = get_system_prompt(active_persona)
+        hybrid_mode = allows_general_knowledge(active_persona)
+        user = build_user_prompt(q, "\n\n".join(lines), hybrid=hybrid_mode)
+        answer, usage = self.llm.chat(system_prompt, user, temperature, max_tokens)
 
         total_ms = (perf_counter() - total_start) * 1000.0
         rerank_batches = getattr(self.rerank, "last_batches", 0) if do_rerank else 0
@@ -176,7 +181,8 @@ class QAPipeline:
         *,
         mode: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
-        rerank: Optional[bool] = None
+        rerank: Optional[bool] = None,
+        persona: Optional[str] = None
     ):
         """
         Yields events:
@@ -268,14 +274,17 @@ class QAPipeline:
         # Yield sources first
         yield {"type": "sources", "data": citations}
 
-        # Call LLM stream
-        user = build_user_prompt(q, "\n\n".join(lines))
+        # Call LLM stream with persona-specific prompt
+        active_persona = persona or DEFAULT_PERSONA
+        system_prompt = get_system_prompt(active_persona)
+        hybrid_mode = allows_general_knowledge(active_persona)
+        user = build_user_prompt(q, "\n\n".join(lines), hybrid=hybrid_mode)
         
         if hasattr(self.llm, "chat_stream"):
-            for token in self.llm.chat_stream(SYSTEM, user, temperature, max_tokens):
+            for token in self.llm.chat_stream(system_prompt, user, temperature, max_tokens):
                 yield {"type": "token", "token": token}
         else:
             # Fallback to sync
-            ans, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+            ans, usage = self.llm.chat(system_prompt, user, temperature, max_tokens)
             yield {"type": "token", "token": ans}
             yield {"type": "usage", "data": usage}

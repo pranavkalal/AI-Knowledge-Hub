@@ -14,12 +14,16 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field, ValidationError
 
+# Import persona system from app.services.prompting
+from app.services.prompting import get_system_prompt, DEFAULT_PERSONA, allows_general_knowledge
+
 SYSTEM_PROMPT = (
     "You are an expert research assistant for the Cotton Research and Development Corporation (CRDC). "
     "Your goal is to provide comprehensive, accurate answers based ONLY on the provided source documents. "
     "If the sources do not contain the answer, state that clearly. Do not hallucinate."
 )
 
+# Strict mode - researcher persona
 PROMPT_USER_INSTRUCTIONS = (
     "Synthesize the information from the provided source passages to answer the user's question. "
     "Structure your answer logically (e.g., use paragraphs for explanations, bullet points for lists). "
@@ -33,6 +37,24 @@ STRUCTURED_FORMAT_INSTRUCTIONS = (
     "- Ensure every factual claim is supported by an inline citation like [S1].\n"
     "- Do not use a fixed 'Summary/Key Points/Conclusion' structure unless it fits the question. Adapt your structure to best answer the query.\n"
     "Do not use JSON. Write natural text."
+)
+
+# Hybrid mode - grower/extension persona (allows general knowledge)
+PROMPT_USER_INSTRUCTIONS_HYBRID = (
+    "Answer the user's question helpfully. "
+    "If the provided sources are relevant, use them and cite with [S1] etc. "
+    "If the question is outside what the sources cover, or if the user asks about something general, "
+    "feel free to use your general knowledge to answer. Be conversational and helpful."
+)
+
+STRUCTURED_FORMAT_INSTRUCTIONS_HYBRID = (
+    "Return the answer in clear, well-structured Markdown.\n"
+    "- Use headings (###) to organize if the answer is complex.\n"
+    "- Use bullet points for lists or key takeaways.\n"
+    "- Cite sources with [S1] when using the provided documents.\n"
+    "- If answering from general knowledge (not from sources), no citation needed - just be helpful.\n"
+    "- If the user asks you to 'act like' or 'answer as' a character, adopt that character's voice and style.\n"
+    "Write naturally. Be conversational."
 )
 
 USER_PROMPT_TEMPLATE = (
@@ -164,7 +186,14 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-    sources_block = "\n".join(lines) if lines else "(no sources)"
+    sources_block = "\n".join(lines) if lines else "(no sources provided)"
+    
+    # Get persona and choose appropriate instructions
+    persona = data.get("persona") or DEFAULT_PERSONA
+    is_hybrid = allows_general_knowledge(persona)
+    
+    user_instructions = PROMPT_USER_INSTRUCTIONS_HYBRID if is_hybrid else PROMPT_USER_INSTRUCTIONS
+    format_instructions = STRUCTURED_FORMAT_INSTRUCTIONS_HYBRID if is_hybrid else STRUCTURED_FORMAT_INSTRUCTIONS
 
     return {
         "question": question,
@@ -172,20 +201,38 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
         "citations": citations,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "instructions": PROMPT_USER_INSTRUCTIONS,
-        "format_instructions": STRUCTURED_FORMAT_INSTRUCTIONS,
+        "instructions": user_instructions,
+        "format_instructions": format_instructions,
         "k": max(requested_k, len(citations)),
+        "persona": persona,
     }
 
 
 def build_prompt_messages(state: Dict[str, Any]):
+    """Build chat prompt messages, using persona-specific system prompt if provided."""
     format_instructions = state.get("format_instructions", STRUCTURED_FORMAT_INSTRUCTIONS)
     citation_ids = [str(c.get("sid")) for c in state.get("citations", []) if c.get("sid")]
     if citation_ids:
         format_instructions = (
             f"{format_instructions}\nAvailable citation IDs: {', '.join(citation_ids)}"
         )
-    prompt_value = CHAT_PROMPT.invoke(
+    
+    # Get persona-specific system prompt
+    persona = state.get("persona") or DEFAULT_PERSONA
+    system_prompt = get_system_prompt(persona)
+    
+    # Build dynamic chat prompt template with persona-specific system prompt
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            (
+                "human",
+                "{instructions}\n\nQuestion:\n{question}\n\nSource Passages:\n{sources_block}\n\n{format_instructions}",
+            ),
+        ]
+    )
+    
+    prompt_value = chat_prompt.invoke(
         {
             "instructions": state.get("instructions", PROMPT_USER_INSTRUCTIONS),
             "question": state.get("question", ""),

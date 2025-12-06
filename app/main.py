@@ -16,6 +16,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from app.routers import health
 from app.routers import ask  # /api/ask (Q&A with citations)
 from app.routers import pdf
+from app.routers import library  # /api/library (document browsing)
 
 app = FastAPI(
     title="AI Knowledge Hub API",
@@ -48,3 +49,5 @@ def ping():
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(ask.router, prefix="/api", tags=["ask"])
 app.include_router(pdf.router)
+app.include_router(library.router, prefix="/api", tags=["library"])
+

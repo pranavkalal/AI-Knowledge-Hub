@@ -1,8 +1,11 @@
 # app/schemas.py
 # Purpose: Pydantic models for the /search API response to keep the JSON contract stable.
 
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel
+
+# Persona types for chat interface
+PersonaType = Literal["researcher", "grower", "extension_officer"]
 
 class SearchResult(BaseModel):
     doc_id: str
