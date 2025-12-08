@@ -14,6 +14,8 @@ help:
 	@echo "  make dev        - Run both Backend and Frontend in parallel"
 	@echo "  make api        - Run Backend API only (port 8000)"
 	@echo "  make ui         - Run Frontend UI only (port 3000)"
+	@echo "  make db         - Start PostgreSQL only (lightweight)"
+	@echo "  make db-stop    - Stop PostgreSQL"
 	@echo "  make ingest     - Run PDF ingestion (Azure + Postgres)"
 	@echo "  make clean      - Clean up temporary files and caches"
 	@echo "  make test       - Run backend tests"
@@ -46,6 +48,18 @@ api:
 ui:
 	@echo "💻 Starting Next.js Frontend..."
 	cd frontend && npm run dev
+
+# -------------------------------
+# Database (lightweight - Postgres only)
+# -------------------------------
+db:
+	@echo "🗄️  Starting PostgreSQL (pgvector)..."
+	docker-compose up -d db
+	@echo "✅ Database ready on port 5432"
+
+db-stop:
+	@echo "🛑 Stopping PostgreSQL..."
+	docker-compose stop db
 
 # -------------------------------
 # Data Pipeline
