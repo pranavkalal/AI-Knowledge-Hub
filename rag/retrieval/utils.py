@@ -231,8 +231,13 @@ def prepare_hits(
             if extra:
                 lookup[chunk_id] = extra
 
-        base_meta = lookup.get(chunk_id, md)
+        # Start with original hit metadata (includes bboxes from Postgres query)
+        original_md = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+        base_meta = lookup.get(chunk_id, {})
+        # Merge: base_meta first, then original_md (so original data takes precedence)
         meta = dict(base_meta) if isinstance(base_meta, dict) else {}
+        if isinstance(original_md, dict):
+            meta.update(original_md)  # original_md (with bboxes) overrides lookup
         meta["id"] = chunk_id
         # Handle both formats: {doc_id}_chunk{N} and {doc_id}_p{page}_{index}
         doc_id = meta.get("doc_id")

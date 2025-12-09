@@ -41,20 +41,16 @@ STRUCTURED_FORMAT_INSTRUCTIONS = (
 
 # Hybrid mode - grower/extension persona (allows general knowledge)
 PROMPT_USER_INSTRUCTIONS_HYBRID = (
-    "Answer the user's question helpfully. "
-    "If the provided sources are relevant, use them and cite with [S1] etc. "
-    "If the question is outside what the sources cover, or if the user asks about something general, "
-    "feel free to use your general knowledge to answer. Be conversational and helpful."
+    "Answer naturally. Use the provided sources if they're helpful, otherwise just answer from what you know. "
+    "Keep it conversational."
 )
 
 STRUCTURED_FORMAT_INSTRUCTIONS_HYBRID = (
-    "Return the answer in clear, well-structured Markdown.\n"
-    "- Use headings (###) to organize if the answer is complex.\n"
-    "- Use bullet points for lists or key takeaways.\n"
-    "- Cite sources with [S1] when using the provided documents.\n"
-    "- If answering from general knowledge (not from sources), no citation needed - just be helpful.\n"
-    "- If the user asks you to 'act like' or 'answer as' a character, adopt that character's voice and style.\n"
-    "Write naturally. Be conversational."
+    "Just answer naturally like you're chatting. "
+    "Short question = short answer. Complex question = more detail if needed. "
+    "Only cite [S1] etc if you're actually using info from the provided sources. "
+    "If answering from your own knowledge, no citations needed. "
+    "Don't force headings or bullet points unless they genuinely help."
 )
 
 USER_PROMPT_TEMPLATE = (
@@ -148,21 +144,39 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
         bbox = None
         if bboxes and isinstance(bboxes, list) and len(bboxes) > 0:
             # Union all bboxes to get bounding rectangle
-            all_x, all_y = [], []
+            all_x1, all_y1, all_x2, all_y2 = [], [], [], []
             for item in bboxes:
-                poly = item.get("polygon") if isinstance(item, dict) else None
+                if not isinstance(item, dict):
+                    continue
+                    
+                # NEW FORMAT: {"bbox": [x, y, w, h], "text": "..."} - already in points
+                if "bbox" in item:
+                    bb = item.get("bbox")
+                    if bb and isinstance(bb, list) and len(bb) >= 4:
+                        x, y, w, h = bb[:4]
+                        all_x1.append(x)
+                        all_y1.append(y)
+                        all_x2.append(x + w)
+                        all_y2.append(y + h)
+                        continue
+                
+                # OLD FORMAT: {"polygon": [...], "text": "..."} - in inches
+                poly = item.get("polygon")
                 if poly and isinstance(poly, list) and len(poly) >= 4:
-                    all_x.extend(poly[0::2])  # x coords
-                    all_y.extend(poly[1::2])  # y coords
-            if all_x and all_y:
-                # Convert from inches to points (72 per inch)
-                min_x, max_x = min(all_x), max(all_x)
-                min_y, max_y = min(all_y), max(all_y)
+                    xs = poly[0::2]  # x coords
+                    ys = poly[1::2]  # y coords
+                    # Convert from inches to points (72 per inch)
+                    all_x1.append(min(xs) * 72)
+                    all_y1.append(min(ys) * 72)
+                    all_x2.append(max(xs) * 72)
+                    all_y2.append(max(ys) * 72)
+                    
+            if all_x1:
                 bbox = [
-                    min_x * 72,
-                    min_y * 72,
-                    (max_x - min_x) * 72,
-                    (max_y - min_y) * 72
+                    min(all_x1),
+                    min(all_y1),
+                    max(all_x2) - min(all_x1),
+                    max(all_y2) - min(all_y1)
                 ]
 
         citations.append(

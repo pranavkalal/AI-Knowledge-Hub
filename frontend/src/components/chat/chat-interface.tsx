@@ -3,13 +3,94 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, AlertCircle, Sparkles, Users } from "lucide-react";
+import { Send, Bot, User, AlertCircle, Sparkles, Users, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE, Citation, PersonaType } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+
+// Persona-specific configurations
+const personaConfig: Record<PersonaType, { placeholder: string; followUps: string[] }> = {
+    grower: {
+        placeholder: "Ask about managing pests, irrigation, or soil health...",
+        followUps: [
+            "What are the yield impacts of this?",
+            "How do I implement this on my farm?",
+            "What are the costs involved?",
+        ],
+    },
+    researcher: {
+        placeholder: "Ask about research findings, methodologies, or data...",
+        followUps: [
+            "What methodology was used in this study?",
+            "Are there conflicting findings in the literature?",
+            "What are the knowledge gaps?",
+        ],
+    },
+    extension_officer: {
+        placeholder: "Ask about recommendations to share with growers...",
+        followUps: [
+            "How can I explain this to growers?",
+            "What are the key takeaways?",
+            "Are there regional differences?",
+        ],
+    },
+};
+
+// Topic-based follow-up suggestions
+const topicFollowUps: Record<string, string[]> = {
+    pest: [
+        "What are the economic thresholds for treatment?",
+        "How does this affect beneficial insects?",
+        "What are the resistance management strategies?",
+    ],
+    nitrogen: [
+        "How do I time nitrogen applications?",
+        "What are the environmental impacts?",
+        "How does this vary by soil type?",
+    ],
+    water: [
+        "What are the optimal irrigation schedules?",
+        "How do I measure water use efficiency?",
+        "What technologies can help monitor this?",
+    ],
+    disease: [
+        "What are the early warning signs?",
+        "How do soil health practices affect this?",
+        "What varieties offer resistance?",
+    ],
+    weed: [
+        "What are the integrated management options?",
+        "How do I prevent herbicide resistance?",
+        "What are the critical timing windows?",
+    ],
+};
+
+// Detect topics from response content
+function detectTopics(content: string): string[] {
+    const lowerContent = content.toLowerCase();
+    const detected: string[] = [];
+
+    if (lowerContent.includes('pest') || lowerContent.includes('whitefly') || lowerContent.includes('insect') || lowerContent.includes('ipm')) {
+        detected.push('pest');
+    }
+    if (lowerContent.includes('nitrogen') || lowerContent.includes('nutrient') || lowerContent.includes('fertilizer')) {
+        detected.push('nitrogen');
+    }
+    if (lowerContent.includes('water') || lowerContent.includes('irrigation') || lowerContent.includes('moisture')) {
+        detected.push('water');
+    }
+    if (lowerContent.includes('disease') || lowerContent.includes('verticillium') || lowerContent.includes('pathogen') || lowerContent.includes('suppressive')) {
+        detected.push('disease');
+    }
+    if (lowerContent.includes('weed') || lowerContent.includes('herbicide')) {
+        detected.push('weed');
+    }
+
+    return detected;
+}
 
 interface ChatInterfaceProps {
     initialQuery: string;
@@ -34,6 +115,32 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
     const scrollRef = useRef<HTMLDivElement>(null);
     const hasInitialized = useRef(false);
     const abortController = useRef<AbortController | null>(null);
+
+    const currentConfig = useMemo(() => personaConfig[persona], [persona]);
+
+    // Generate contextual follow-up suggestions based on last AI response
+    const followUpSuggestions = useMemo(() => {
+        const lastAiMessage = [...messages].reverse().find(m => m.role === 'assistant' && !m.isStreaming && !m.error && m.content);
+        if (!lastAiMessage) return [];
+
+        const topics = detectTopics(lastAiMessage.content);
+
+        // Collect topic-specific follow-ups
+        const suggestions = new Set<string>();
+        for (const topic of topics.slice(0, 2)) {
+            const topicSuggestions = topicFollowUps[topic] || [];
+            topicSuggestions.slice(0, 2).forEach(s => suggestions.add(s));
+        }
+
+        // Fill remaining slots with persona-specific follow-ups
+        if (suggestions.size < 3) {
+            currentConfig.followUps.forEach(s => {
+                if (suggestions.size < 3) suggestions.add(s);
+            });
+        }
+
+        return Array.from(suggestions).slice(0, 3);
+    }, [messages, currentConfig]);
 
     useEffect(() => {
         if (initialQuery && messages.length === 0 && !hasInitialized.current) {
@@ -240,6 +347,27 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
                             </motion.div>
                         ))}
                     </AnimatePresence>
+
+                    {/* Follow-up suggestions */}
+                    {followUpSuggestions.length > 0 && !isLoading && messages.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="flex flex-wrap gap-2 mt-4"
+                        >
+                            {followUpSuggestions.map((suggestion, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => handleSend(suggestion)}
+                                    className="group flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 transition-all hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                                >
+                                    {suggestion}
+                                    <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+                                </button>
+                            ))}
+                        </motion.div>
+                    )}
+
                     <div ref={scrollRef} />
                 </div>
             </ScrollArea>
@@ -257,7 +385,7 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
                             <Input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Ask about IPM, water productivity, or weed management..."
+                                placeholder={currentConfig.placeholder}
                                 className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none h-auto py-1"
                             />
                             <div className="flex items-center space-x-2">

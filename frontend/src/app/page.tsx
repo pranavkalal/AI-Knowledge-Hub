@@ -2,19 +2,94 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ArrowRight, Leaf, Droplets, Sprout, Users } from "lucide-react";
+import { Search, ArrowRight, Leaf, Droplets, Sprout, Users, FlaskConical, BookOpen, Bug, Microscope, FileText, Tractor, Beaker, ClipboardList } from "lucide-react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PersonaType } from "@/lib/api";
+
+// Persona-specific configurations
+const personaConfig = {
+  grower: {
+    placeholder: "How do I manage pests on my farm?",
+    cards: [
+      {
+        icon: Bug,
+        text: "What are the best ways to control silverleaf whitefly?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: Droplets,
+        text: "How can I improve water efficiency in my irrigation?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: Tractor,
+        text: "What soil management practices improve cotton yield?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+  researcher: {
+    placeholder: "What does the latest research say about...?",
+    cards: [
+      {
+        icon: Microscope,
+        text: "What are the mechanisms of disease suppression in cotton soils?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: Beaker,
+        text: "How does dissolved organic nitrogen affect nutrient cycling?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: FlaskConical,
+        text: "What are the latest findings on insect resistance monitoring?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+  extension_officer: {
+    placeholder: "What guidance can I share with growers about...?",
+    cards: [
+      {
+        icon: ClipboardList,
+        text: "What are the key IPM recommendations for this season?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: BookOpen,
+        text: "How should growers approach nitrogen management?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: FileText,
+        text: "What are the best practices for weed management in cotton?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+};
 
 export default function Home() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [persona, setPersona] = useState<PersonaType>("grower");
+
+  const currentConfig = useMemo(() => personaConfig[persona], [persona]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +144,7 @@ export default function Home() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Ask about silverleaf whitefly, nitrogen efficiency, or disease management..."
+                  placeholder={currentConfig.placeholder}
                   className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
                 <div className="flex items-center space-x-2 text-slate-400">
@@ -101,41 +176,31 @@ export default function Home() {
             </form>
           </motion.div>
 
-          <motion.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                icon: Leaf,
-                text: "What strategies are recommended for managing silverleaf whitefly in cotton?",
-                color: "text-purple-600",
-                bg: "bg-purple-50",
-              },
-              {
-                icon: Droplets,
-                text: "How can I improve nitrogen use efficiency in my cotton crops?",
-                color: "text-blue-600",
-                bg: "bg-blue-50",
-              },
-              {
-                icon: Sprout,
-                text: "What are the characteristics of disease suppressive cotton farming systems?",
-                color: "text-amber-600",
-                bg: "bg-amber-50",
-              },
-            ].map((card, i) => (
-              <div
-                key={i}
-                onClick={() => setQuery(card.text)}
-                className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-[#f0f4f9] p-4 text-center transition-all hover:bg-[#dde3ea]"
-              >
-                <div className="mb-3 rounded-full bg-white p-2 shadow-sm">
-                  <card.icon className={`h-6 w-6 ${card.color}`} />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={persona}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            >
+              {currentConfig.cards.map((card, i) => (
+                <div
+                  key={i}
+                  onClick={() => setQuery(card.text)}
+                  className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-[#f0f4f9] p-4 text-center transition-all hover:bg-[#dde3ea]"
+                >
+                  <div className="mb-3 rounded-full bg-white p-2 shadow-sm">
+                    <card.icon className={`h-6 w-6 ${card.color}`} />
+                  </div>
+                  <p className="text-sm font-medium text-slate-700">
+                    {card.text}
+                  </p>
                 </div>
-                <p className="text-sm font-medium text-slate-700">
-                  {card.text}
-                </p>
-              </div>
-            ))}
-          </motion.div>
+              ))}
+            </motion.div>
+          </AnimatePresence>
         </motion.div>
       </div>
     </div>

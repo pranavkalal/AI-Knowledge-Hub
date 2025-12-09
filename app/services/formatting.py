@@ -72,9 +72,9 @@ def _coerce_page(value: Any) -> Optional[int]:
 
 def _calculate_bbox(bboxes: Any) -> Optional[List[float]]:
     """
-    Calculate the union bounding box from a list of Azure polygons.
-    Converts from inches (Azure) to points (72 DPI).
-    Returns [x, y, width, height].
+    Calculate the union bounding box from a list of line bboxes.
+    Handles both OLD format (polygon) and NEW format (simplified [x,y,w,h]).
+    Returns [x, y, width, height] in points.
     """
     import json
     if isinstance(bboxes, str):
@@ -86,37 +86,41 @@ def _calculate_bbox(bboxes: Any) -> Optional[List[float]]:
     if not bboxes or not isinstance(bboxes, list):
         return None
 
-    all_x = []
-    all_y = []
+    all_x1, all_y1, all_x2, all_y2 = [], [], [], []
     
     for item in bboxes:
-        # item is {"text": "...", "polygon": [...]}
+        # NEW FORMAT: {"text": "...", "bbox": [x, y, w, h]} - already in points
+        if "bbox" in item:
+            bbox = item.get("bbox")
+            if bbox and isinstance(bbox, list) and len(bbox) >= 4:
+                x, y, w, h = bbox[:4]
+                all_x1.append(x)
+                all_y1.append(y)
+                all_x2.append(x + w)
+                all_y2.append(y + h)
+                continue
+        
+        # OLD FORMAT: {"text": "...", "polygon": [...]} - in inches
         poly = item.get("polygon")
-        if not poly or not isinstance(poly, list):
-            continue
+        if poly and isinstance(poly, list) and len(poly) >= 4:
+            # polygon is [x1, y1, x2, y2, ...]
+            xs = poly[0::2]
+            ys = poly[1::2]
+            # Convert inches to points (72 DPI)
+            all_x1.append(min(xs) * 72)
+            all_y1.append(min(ys) * 72)
+            all_x2.append(max(xs) * 72)
+            all_y2.append(max(ys) * 72)
         
-        # polygon is [x1, y1, x2, y2, ...]
-        # separate x and y
-        xs = poly[0::2]
-        ys = poly[1::2]
-        all_x.extend(xs)
-        all_y.extend(ys)
-        
-    if not all_x or not all_y:
+    if not all_x1:
         return None
         
-    min_x = min(all_x)
-    min_y = min(all_y)
-    max_x = max(all_x)
-    max_y = max(all_y)
+    min_x = min(all_x1)
+    min_y = min(all_y1)
+    max_x = max(all_x2)
+    max_y = max(all_y2)
     
-    # Convert inches to points (72 DPI)
-    return [
-        min_x * 72,
-        min_y * 72,
-        (max_x - min_x) * 72,
-        (max_y - min_y) * 72
-    ]
+    return [min_x, min_y, max_x - min_x, max_y - min_y]
 
 
 def format_citation(hit: Dict[str, Any]) -> Dict[str, Any]:
@@ -133,7 +137,8 @@ def format_citation(hit: Dict[str, Any]) -> Dict[str, Any]:
     page = _coerce_page(metadata.get("page"))
     
     # Calculate bbox if available
-    bbox = _calculate_bbox(metadata.get("bboxes"))
+    bboxes_raw = metadata.get("bboxes")
+    bbox = _calculate_bbox(bboxes_raw)
 
     faiss_score = None
     rerank_score = None
