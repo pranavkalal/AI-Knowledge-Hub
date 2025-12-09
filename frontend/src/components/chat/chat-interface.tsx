@@ -257,7 +257,7 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
                             <Input
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Ask anything about cotton research..."
+                                placeholder="Ask about IPM, water productivity, or weed management..."
                                 className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none h-auto py-1"
                             />
                             <div className="flex items-center space-x-2">

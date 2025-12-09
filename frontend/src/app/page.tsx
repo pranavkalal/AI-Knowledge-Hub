@@ -69,7 +69,7 @@ export default function Home() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Ask about pests, water efficiency, or yield data..."
+                  placeholder="Ask about silverleaf whitefly, nitrogen efficiency, or disease management..."
                   className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
                 <div className="flex items-center space-x-2 text-slate-400">
@@ -105,19 +105,19 @@ export default function Home() {
             {[
               {
                 icon: Leaf,
-                text: "What are the best practices for integrated pest management?",
+                text: "What strategies are recommended for managing silverleaf whitefly in cotton?",
                 color: "text-purple-600",
                 bg: "bg-purple-50",
               },
               {
                 icon: Droplets,
-                text: "Explain the nitrogen use efficiency guidelines for 2024.",
+                text: "How can I improve nitrogen use efficiency in my cotton crops?",
                 color: "text-blue-600",
                 bg: "bg-blue-50",
               },
               {
                 icon: Sprout,
-                text: "How does soil moisture affect cotton yield potential?",
+                text: "What are the characteristics of disease suppressive cotton farming systems?",
                 color: "text-amber-600",
                 bg: "bg-amber-50",
               },

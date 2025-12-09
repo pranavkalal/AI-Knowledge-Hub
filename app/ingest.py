@@ -244,15 +244,45 @@ def main():
     )
     
     if pg_store:
-        print("[store] pushing to Postgres...")
-        # Here we would iterate records, chunk them, embed them, and push to PG.
-        # Since I didn't implement the chunking loop above, I'll do it here.
+        print("[store] pushing to Postgres with hybrid semantic chunking...")
+        
+        # Import the semantic chunker and bbox mapper
         from langchain_text_splitters import RecursiveCharacterTextSplitter
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        from rag.ingest_lib.chunk_bbox_mapper import (
+            find_matching_bboxes, 
+            calculate_union_bbox,
+            simplify_page_bboxes
+        )
+        
+        # Hybrid chunking config: semantic-aware, respects sentence boundaries
+        # Smaller chunks (600 tokens) work better for retrieval than 1000
+        chunking_config = cfg.get("chunking", {})
+        chunk_size = chunking_config.get("max_tokens", 600)
+        chunk_overlap = chunking_config.get("overlap", 100)
+        min_chunk_tokens = chunking_config.get("min_chunk_tokens", 50)
+        
+        # Use semantic-aware separators
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size * 4,  # Approximate chars (4 chars/token avg)
+            chunk_overlap=chunk_overlap * 4,
+            separators=[
+                "\n\n\n",  # Section breaks
+                "\n\n",    # Paragraph breaks
+                "\n",      # Line breaks
+                ". ",      # Sentence boundaries
+                "! ",
+                "? ",
+                "; ",
+                ", ",
+                " ",
+                ""
+            ],
+            keep_separator=True
+        )
         
         all_chunks = []
         for rec in records:
-            # rec["parsed"] is now a list of page dicts (from AzureParser.parse)
+            # rec["parsed"] is a list of page dicts (from AzureParser.parse)
             pages = rec.get("parsed")
             if not pages or not isinstance(pages, list):
                 print(f"[warn] no pages found for {rec['id']}, skipping chunking")
@@ -261,44 +291,61 @@ def main():
             for page in pages:
                 page_num = page["page_number"]
                 page_text = page["text"]
+                page_bboxes = page.get("bboxes", [])
                 
-                # Split this page's text
+                # Skip empty pages
+                if not page_text.strip():
+                    continue
+                
+                # Split this page's text with semantic awareness
                 chunks = splitter.split_text(page_text)
+                
                 for idx, text_chunk in enumerate(chunks):
+                    # Skip tiny chunks (often just headers or noise)
+                    if len(text_chunk.split()) < min_chunk_tokens // 4:
+                        continue
+                    
                     # ID format: doc_id + _p + page + _ + index
                     chunk_id = f"{rec['id']}_p{page_num}_{idx}"
                     
-                    # Merge metadata
-                    meta = rec["meta"].copy()
-                    meta["page"] = page_num
+                    # Find matching bboxes for this specific chunk
+                    matching_bboxes = find_matching_bboxes(text_chunk, page_bboxes)
                     
-                    # Add heuristic bboxes (just passing page lines for now, 
-                    # ideally we'd map chunk text to specific lines/bboxes)
-                    # For now, let's store all lines of the page in the chunk metadata 
-                    # so frontend can highlight. This is heavy but accurate for "page level" context.
-                    # Or better: don't store lines in metadata if too big. 
-                    # Let's store a simplified version or just the page dimensions.
-                    meta["page_width"] = page.get("width")
-                    meta["page_height"] = page.get("height")
-                    # Store all page bboxes in metadata as requested
-                    meta["bboxes"] = page.get("bboxes", [])
+                    # Calculate union bbox for deep linking highlight
+                    union_bbox = calculate_union_bbox(matching_bboxes)
+                    
+                    # Build metadata
+                    meta = {
+                        "title": rec["meta"].get("title"),
+                        "year": rec["meta"].get("year"),
+                        "source_url": rec["meta"].get("source_url"),
+                        "filename": rec["meta"].get("filename"),
+                        "page": page_num,
+                        "page_width": page.get("width"),
+                        "page_height": page.get("height"),
+                        # Store only matching bboxes (much smaller than all page bboxes)
+                        "bboxes": matching_bboxes,
+                    }
                     
                     all_chunks.append({
                         "id": chunk_id,
                         "doc_id": rec["id"],
                         "chunk_index": idx,
+                        "page_number": page_num,  # First-class field for DB
                         "text": text_chunk,
                         "metadata": meta
                     })
         
-        # Batch embed
+        print(f"[chunks] generated {len(all_chunks)} chunks from {len(records)} documents")
+        
+        # Batch embed and store
         batch_size = 100
         for i in range(0, len(all_chunks), batch_size):
             batch = all_chunks[i:i+batch_size]
             texts = [c["text"] for c in batch]
             embeddings = pg_store.embedder.embed_texts(texts)
             pg_store.add_documents(batch, embeddings)
-            print(f"   pushed {len(batch)} chunks")
+            print(f"   pushed batch {i//batch_size + 1}: {len(batch)} chunks")
 
     print("[done] ingestion complete.")
     return 0

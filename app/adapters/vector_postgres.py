@@ -27,18 +27,25 @@ class PostgresStoreAdapter:
         with self.engine.connect() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             
-            # Create table with search_vector for hybrid search
+            # Create table with search_vector for hybrid search and page_number for deep linking
             conn.execute(text(f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
                     id TEXT PRIMARY KEY,
                     doc_id TEXT,
                     chunk_index INTEGER,
+                    page_number INTEGER,
                     text TEXT,
                     embedding vector(1536),
                     metadata JSONB,
                     search_vector tsvector,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """))
+            
+            # Add page_number column if it doesn't exist (for existing tables)
+            conn.execute(text(f"""
+                ALTER TABLE {self.table_name} 
+                ADD COLUMN IF NOT EXISTS page_number INTEGER
             """))
             
             # Create HNSW index for faster vector search
@@ -70,17 +77,19 @@ class PostgresStoreAdapter:
                 # Ensure core fields are top-level
                 doc_id = chunk.get("doc_id") or meta.get("doc_id")
                 chunk_index = chunk.get("chunk_index") or meta.get("chunk_index") or 0
+                page_number = chunk.get("page_number") or meta.get("page") or meta.get("page_number")
                 text_content = chunk.get("text") or meta.get("text") or ""
                 
                 # Insert or update
                 # We use to_tsvector('english', :text) to populate the search vector
                 stmt = text(f"""
-                    INSERT INTO {self.table_name} (id, doc_id, chunk_index, text, embedding, metadata, search_vector)
-                    VALUES (:id, :doc_id, :chunk_index, :text, :embedding, :metadata, to_tsvector('english', :text))
+                    INSERT INTO {self.table_name} (id, doc_id, chunk_index, page_number, text, embedding, metadata, search_vector)
+                    VALUES (:id, :doc_id, :chunk_index, :page_number, :text, :embedding, :metadata, to_tsvector('english', :text))
                     ON CONFLICT (id) DO UPDATE SET
                         text = EXCLUDED.text,
                         embedding = EXCLUDED.embedding,
                         metadata = EXCLUDED.metadata,
+                        page_number = EXCLUDED.page_number,
                         search_vector = to_tsvector('english', EXCLUDED.text)
                 """)
                 
@@ -88,6 +97,7 @@ class PostgresStoreAdapter:
                     "id": chunk["id"],
                     "doc_id": doc_id,
                     "chunk_index": chunk_index,
+                    "page_number": page_number,
                     "text": text_content,
                     "embedding": str(emb),  # pgvector expects string representation or list
                     "metadata": json.dumps(meta)
