@@ -43,7 +43,8 @@ def load_embedder(embed_cfg: Mapping[str, Any] | None, env: Mapping[str, str] | 
         batch_size = 64
 
     if adapter_key in {"openai", "openai_embeddings"}:
-        model = env_map.get("EMB_MODEL") or cfg.get("model") or "text-embedding-3-small"
+        # Config model takes precedence over env var
+        model = cfg.get("model") or env_map.get("EMB_MODEL") or "text-embedding-3-small"
         max_retries = cfg.get("max_retries", 3)
         retry_backoff = cfg.get("retry_backoff", 1.5)
         try:

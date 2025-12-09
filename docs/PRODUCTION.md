@@ -1,53 +1,127 @@
-# Production Roadmap: AI Knowledge Hub
+# Production Deployment (Azure)
 
-This document outlines the steps to transition the AI Knowledge Hub from a local prototype to a production-ready system suitable for real user testing and eventual public deployment.
+## Architecture
 
-## Phase 1: Readiness for User Testing (Immediate)
-**Goal**: Enable secure, reliable testing with a small group of users and capture their feedback.
-
-### 1. Containerization
-- [ ] **Dockerize API**: Create a `Dockerfile` for the FastAPI backend.
-- [ ] **Dockerize UI**: Create a `Dockerfile` for the Streamlit frontend.
-- [ ] **Docker Compose**: Create a `docker-compose.yml` to spin up both services + a simple vector store (if moving away from local files).
-
-### 2. Basic Security
-- [ ] **API Auth**: Implement API Key authentication (or Basic Auth) for the FastAPI endpoints to prevent unauthorized access.
-- [ ] **UI Auth**: Add a simple password protection screen to Streamlit (using `st.session_state` or `streamlit-authenticator`) to restrict access during testing.
-
-### 3. Feedback Loop (Critical for Evaluation)
-- [ ] **Feedback UI**: Add "Thumbs Up/Down" and "Comment" buttons below each answer in Streamlit.
-- [ ] **Feedback Storage**: Log this feedback to a persistent store (e.g., a simple SQLite DB or append to a CSV/JSONL file on disk for now) so you can analyze quality.
-
-### 4. Deployment
-- [ ] **Cloud Hosting**: Deploy the Docker containers to a cloud provider (e.g., AWS ECS, Azure Container Apps, or a simple VM like EC2/DigitalOcean).
-- [ ] **Persistent Volume**: Ensure the `data/` directory (containing the FAISS index) is mounted as a persistent volume so it survives restarts.
+```mermaid
+graph TB
+    User[Users] --> CDN[Azure CDN]
+    CDN --> Frontend[Static Web Apps]
+    Frontend --> API[Container Apps]
+    API --> DB[(PostgreSQL Flexible)]
+    API --> OpenAI[OpenAI API]
+    API --> KeyVault[Key Vault]
+```
 
 ---
 
-## Phase 2: Production Architecture (Medium Term)
-**Goal**: Scalability, robustness, and maintainability.
+## Azure Services
 
-### 1. Data Persistence
-- [ ] **Migrate Metadata**: Move from `docs.jsonl` to a relational database (PostgreSQL). This allows for better querying, updates, and data integrity.
-- [ ] **Vector Store**: Migrate from local `vectors.faiss` to a managed vector database (e.g., Qdrant, Weaviate, Pinecone) or run a dedicated FAISS server. This handles concurrency and updates better than a file-based index.
-
-### 2. Ingestion Pipeline
-- [ ] **Orchestration**: Move ingestion scripts (`rag/ingest_lib`) to a workflow orchestrator (e.g., Airflow, Prefect, Dagster).
-- [ ] **Incremental Updates**: Implement logic to only process *new* or *modified* PDFs, rather than rebuilding the entire index every time.
-
-### 3. Advanced Security
-- [ ] **OAuth2**: Implement proper user login (Google/Microsoft SSO) for the UI.
-- [ ] **RBAC**: Role-Based Access Control (e.g., Admin vs. Viewer).
-
-### 4. Observability
-- [ ] **Tracing**: Integrate LangSmith or Arize Phoenix to trace every LLM call, latency, and token usage.
-- [ ] **Logging**: Centralized logging (e.g., ELK stack or CloudWatch).
+| Component             | Azure Service              | SKU                          |
+| --------------------- | -------------------------- | ---------------------------- |
+| **API Backend** | Container Apps             | Consumption (0.5 vCPU, 1GB)  |
+| **Frontend**    | Static Web Apps            | Free tier                    |
+| **Database**    | PostgreSQL Flexible Server | Burstable B1ms (1 vCPU, 2GB) |
+| **Secrets**     | Key Vault                  | Standard                     |
+| **Monitoring**  | Application Insights       | Pay-as-you-go                |
 
 ---
 
-## Phase 3: Enterprise Features (Long Term)
-**Goal**: High availability and advanced capabilities.
+## Cost Estimates
 
-- [ ] **Multi-Tenancy**: Support multiple datasets/knowledge bases.
-- [ ] **GraphRAG**: Implement Knowledge Graph extraction for better reasoning across documents.
-- [ ] **Hybrid Search**: Fine-tune the hybrid search (Dense + BM25) weights based on user feedback data.
+### One-Time Ingestion (1000 PDFs)
+
+| Item              | Cost            |
+| ----------------- | --------------- |
+| Azure DI (Layout) | ~$450           |
+| OpenAI Embeddings | ~$6             |
+| **Total**   | **~$456** |
+
+### Monthly Operations
+
+| Service                 | Estimated Cost |
+| ----------------------- | -------------- |
+| Container Apps          | $20-50         |
+| PostgreSQL Flexible     | $50-100        |
+| OpenAI API (5k queries) | $100           |
+| Key Vault               | $1             |
+| Application Insights    | $5-10          |
+| **Total**         | **$175** |
+
+---
+
+## Deployment Steps
+
+### 1. PostgreSQL Setup
+
+```bash
+# Create PostgreSQL with pgvector
+az postgres flexible-server create \
+  --name crdc-knowledge-db \
+  --resource-group crdc-rg \
+  --location australiaeast \
+  --sku-name Standard_B1ms \
+  --storage-size 32 \
+  --version 16
+
+# Enable pgvector extension
+az postgres flexible-server parameter set \
+  --name azure.extensions \
+  --value vector \
+  --resource-group crdc-rg \
+  --server-name crdc-knowledge-db
+```
+
+### 2. Container Apps
+
+```bash
+# Create Container Apps environment
+az containerapp env create \
+  --name crdc-env \
+  --resource-group crdc-rg \
+  --location australiaeast
+
+# Deploy API
+az containerapp create \
+  --name crdc-api \
+  --resource-group crdc-rg \
+  --environment crdc-env \
+  --image ghcr.io/your-org/crdc-api:latest \
+  --target-port 8000 \
+  --ingress external \
+  --env-vars OPENAI_API_KEY=secretref:openai-key
+```
+
+### 3. Key Vault Secrets
+
+```bash
+az keyvault secret set --vault-name crdc-vault --name openai-key --value "sk-..."
+az keyvault secret set --vault-name crdc-vault --name postgres-conn --value "postgresql://..."
+az keyvault secret set --vault-name crdc-vault --name azure-di-key --value "..."
+```
+
+---
+
+## Environment Variables (Production)
+
+```bash
+# Required
+OPENAI_API_KEY=@Microsoft.KeyVault(...)
+POSTGRES_CONNECTION_STRING=@Microsoft.KeyVault(...)
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://...
+AZURE_DOCUMENT_INTELLIGENCE_KEY=@Microsoft.KeyVault(...)
+
+# Optional
+COTTON_RUNTIME=configs/runtime/openai.yaml
+LOG_LEVEL=INFO
+```
+
+---
+
+## Security Checklist
+
+- [ ] CORS locked to frontend domain only
+- [ ] API keys in Key Vault (not env vars)
+- [ ] Database firewall rules configured
+- [ ] HTTPS only (enforced by Container Apps)
+- [ ] Rate limiting enabled
+- [ ] Application Insights connected

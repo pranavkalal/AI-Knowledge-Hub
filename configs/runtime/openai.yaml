@@ -1,11 +1,15 @@
-# Opinionated preset for running the Knowledge Hub with OpenAI embeddings
+# Production config for running the Knowledge Hub with OpenAI embeddings
 # and LangChain orchestration. Point COTTON_RUNTIME at this file to enable it.
+#
+# PRODUCTION MODELS (upgraded 2024-12):
+#   - Embedding: text-embedding-3-large (3072 dims, best retrieval quality)
+#   - LLM: gpt-4o (best reasoning and answer quality)
 
 orchestrator: langchain
 
 embedder:
   adapter: openai
-  model: text-embedding-3-small
+  model: text-embedding-3-large  # ⬆️ Upgraded from small for better retrieval
   batch_size: 256
   normalize: true
   max_retries: 5
@@ -25,9 +29,9 @@ reranker:
 
 llm:
   adapter: openai
-  model: gpt-4o-mini
+  model: gpt-4o  # ⬆️ Upgraded from mini for better answer quality
   temperature: 0.2
-  max_output_tokens: 900
+  max_output_tokens: 1000  # ⬆️ Allow fuller answers
   max_retries: 3
   timeout: 60
 
@@ -49,8 +53,8 @@ langchain:
   stream: true
   use_chat_openai: true
   chat_openai:
-    model: gpt-4o-mini
+    model: gpt-4o  # ⬆️ Upgraded from mini
     temperature: 0.2
-    max_output_tokens: 900
+    max_output_tokens: 1000
     max_retries: 3
     timeout: 60

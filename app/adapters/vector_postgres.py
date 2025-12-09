@@ -28,6 +28,7 @@ class PostgresStoreAdapter:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             
             # Create table with search_vector for hybrid search and page_number for deep linking
+            # Note: vector(3072) for text-embedding-3-large model
             conn.execute(text(f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
                     id TEXT PRIMARY KEY,
@@ -35,7 +36,7 @@ class PostgresStoreAdapter:
                     chunk_index INTEGER,
                     page_number INTEGER,
                     text TEXT,
-                    embedding vector(1536),
+                    embedding vector(3072),
                     metadata JSONB,
                     search_vector tsvector,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

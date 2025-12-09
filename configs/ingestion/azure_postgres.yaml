@@ -1,5 +1,6 @@
 # configs/ingestion/azure_postgres.yaml
 # Ingestion config for Azure Document Intelligence + PostgreSQL
+# PRODUCTION CONFIG (updated 2024-12)
 
 seed_urls: []  # Not used - we process local PDFs
 
@@ -14,7 +15,7 @@ storage:
 
 embedder:
   provider: openai
-  model: text-embedding-3-small
+  model: text-embedding-3-large  # ⬆️ Production model (3072 dims)
 
 # Hybrid semantic chunking config (Option C)
 chunking:
@@ -27,7 +28,7 @@ output:
   jsonl: "data/staging/azure_chunks.jsonl"
   csv: "data/staging/azure_index.csv"
 
-download_dir: "data/raw_ingest"  # Test subset (36 PDFs)
+download_dir: "data/raw"  # Sample PDF directory
 
-limit: 40  # Process up to 40 PDFs
+limit: 40  # Sample PDFs only (production: increase to 3100)
 
