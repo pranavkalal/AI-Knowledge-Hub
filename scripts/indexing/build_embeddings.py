@@ -15,6 +15,10 @@ import json
 import os
 from pathlib import Path
 import numpy as np
+from dotenv import load_dotenv
+
+# Load env vars (API keys)
+load_dotenv()
 
 from app.adapters.loader import load_embedder
 
@@ -54,9 +58,9 @@ def main():
     ap.add_argument("--chunks", default="data/staging/chunks.jsonl")
     ap.add_argument("--out_vecs", default="data/embeddings/embeddings.npy")
     ap.add_argument("--out_ids", default="data/embeddings/ids.npy")
-    ap.add_argument("--model", default="BAAI/bge-small-en-v1.5")
+    ap.add_argument("--model", default="text-embedding-3-small")
     ap.add_argument("--batch", type=int, default=64)
-    ap.add_argument("--adapter", default=os.getenv("EMB_ADAPTER", "bge"))
+    ap.add_argument("--adapter", default=os.getenv("EMB_ADAPTER", "openai"))
     ap.add_argument("--normalize", dest="normalize", action="store_true")
     ap.add_argument("--no-normalize", dest="normalize", action="store_false")
     ap.set_defaults(normalize=True)

@@ -40,7 +40,15 @@ def get_tokenizer(model_name: Optional[str] = None) -> PreTrainedTokenizerBase:
     Falls back to ``CHUNK_TOKENIZER_MODEL`` or BAAI/bge-small-en-v1.5 when the
     requested embedding family (for example OpenAI ``text-embedding-3-small``)
     does not expose a Hugging Face tokenizer.
+    
+    Set USE_TIKTOKEN=1 to use OpenAI's tiktoken instead (recommended for OpenAI embeddings).
     """
+    # Check if we should use tiktoken
+    use_tiktoken = os.environ.get("USE_TIKTOKEN", "").lower() in ("1", "true", "yes")
+    if use_tiktoken:
+        from rag.ingest.chunkers.tiktoken_wrapper import TiktokenWrapper
+        logger.info("Using OpenAI tiktoken encoder (cl100k_base)")
+        return TiktokenWrapper()
 
     requested = model_name or DEFAULT_EMBED_MODEL
     fallback_env = os.environ.get("CHUNK_TOKENIZER_MODEL")
@@ -63,11 +71,10 @@ def get_tokenizer(model_name: Optional[str] = None) -> PreTrainedTokenizerBase:
                     requested,
                     name,
                 )
+            logger.info("Loaded tokenizer: %s (model_max_length=%s)", name, tok.model_max_length)
             return tok
 
-    raise RuntimeError(
-        "Unable to load a fast tokenizer for chunking. Tried: " + ", ".join(candidates)
-    )
+    raise RuntimeError(f"Could not load any tokenizer. Tried: {candidates}")
 
 
 def _resolve_char_span(

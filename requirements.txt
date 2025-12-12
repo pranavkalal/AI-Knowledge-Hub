@@ -11,7 +11,7 @@ python-dotenv==1.0.1
 requests==2.32.3
 
 # --- UI
-streamlit==1.37.0
+
 watchdog==4.0.1
 
 # --- Embeddings / NLP
@@ -45,3 +45,9 @@ httpx==0.27.2
 langchain==0.2.10
 langchain-core==0.2.43
 langchain-community==0.2.9
+
+# --- Azure & Database
+azure-ai-documentintelligence>=1.0.0b3
+psycopg2-binary==2.9.9
+pgvector==0.2.5
+sqlalchemy==2.0.30

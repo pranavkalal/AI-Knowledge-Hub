@@ -97,6 +97,15 @@ def _build_pipeline(cfg_path: str, cfg_dict: Dict[str, object]) -> object:
         factory._load_cfg = original_loader  # type: ignore[attr-defined]
 
 
+def normalize_id(doc_id: str) -> str:
+    """Normalize ID to handle mismatch between DB and Gold."""
+    # Extract hash prefix (first part before _)
+    parts = doc_id.split('_')
+    if parts and len(parts[0]) == 12:
+        return parts[0]
+    return doc_id
+
+
 def evaluate_pipeline(
     pipeline: object,
     queries: List[Dict[str, object]],
@@ -112,7 +121,7 @@ def evaluate_pipeline(
     for entry in queries:
         question = str(entry.get("query") or "").strip()
         gold_raw = entry.get("gold_doc_ids") if isinstance(entry, dict) else []
-        gold_doc_ids: List[str] = gold_raw if isinstance(gold_raw, list) else []
+        gold_doc_ids: List[str] = [normalize_id(str(gid)) for gid in gold_raw] if isinstance(gold_raw, list) else []
         preds: List[str] = []
         if question:
             try:
@@ -131,7 +140,10 @@ def evaluate_pipeline(
                     if isinstance(citation, dict):
                         doc_id = citation.get("doc_id")
                         if doc_id is not None:
-                            preds.append(str(doc_id))
+                            preds.append(normalize_id(str(doc_id)))
+                
+                # Deduplicate preds while preserving order
+                preds = list(dict.fromkeys(preds))
 
         ndcg_scores.append(ndcg_at_k(preds, gold_doc_ids, k))
         recall_scores.append(recall_at_k(preds, gold_doc_ids, k))

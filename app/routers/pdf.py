@@ -38,6 +38,13 @@ def pdf_by_filename(filename: str):
 def pdf_by_doc_id(doc_id: str):
     filename = get_pdf_filename(doc_id)
     if not filename:
+        print(f"[WARN] PDF not found for doc_id: {doc_id} (No filename resolved)")
         raise HTTPException(status_code=404, detail="PDF not found for doc_id")
-    path = _resolve_path(filename)
+    
+    try:
+        path = _resolve_path(filename)
+    except HTTPException as e:
+        print(f"[WARN] PDF resolution failed for doc_id: {doc_id}, filename: {filename}. Error: {e.detail}")
+        raise e
+        
     return FileResponse(path, media_type="application/pdf", filename=path.name)

@@ -12,30 +12,27 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 SYSTEM_PROMPT = (
-    "You are a careful assistant for Australian cotton R&D. "
-    "Answer ONLY from the provided source passages. "
-    "Include inline citations using [S#] per passage and provide a Sources section."
+    "You are an expert research assistant for the Cotton Research and Development Corporation (CRDC). "
+    "Your goal is to provide comprehensive, accurate answers based ONLY on the provided source documents. "
+    "If the sources do not contain the answer, state that clearly. Do not hallucinate."
 )
 
 PROMPT_USER_INSTRUCTIONS = (
-    "Produce a grounded answer that follows the required schema. "
-    "Each sentence that states a fact must include one or more inline citations like [S1] referencing the provided source IDs."
-    "\nSections:\n"
-    "1. Summary — 3-5 sentences synthesising the answer with inline citations.\n"
-    "2. Key Points — 3-6 concise bullet sentences, each ending with citations.\n"
-    "3. Conclusion — 1-2 sentences highlighting the key takeaway with citations."
+    "Synthesize the information from the provided source passages to answer the user's question. "
+    "Structure your answer logically (e.g., use paragraphs for explanations, bullet points for lists). "
+    "Every factual claim must be supported by an inline citation like [S1] referencing the source IDs."
 )
 
 STRUCTURED_FORMAT_INSTRUCTIONS = (
-    "Return a strict JSON object with the following keys:\n"
-    '- "summary": string (3-5 sentences, include inline citations like [S1])\n'
-    '- "key_points": array of strings (each string is a bullet sentence ending with inline citations)\n'
-    '- "conclusion": string (1-2 sentences with inline citations)\n'
-    '- "cited_sources": array of unique citation IDs (e.g. ["S1", "S2"]) used in the answer.\n'
-    "Use double quotes, omit trailing commas, and do not include any text outside the JSON."
+    "Return the answer in clear, well-structured Markdown.\n"
+    "- Use headings (###) to organize complex topics.\n"
+    "- Use bullet points for lists or key takeaways.\n"
+    "- Ensure every factual claim is supported by an inline citation like [S1].\n"
+    "- Do not use a fixed 'Summary/Key Points/Conclusion' structure unless it fits the question. Adapt your structure to best answer the query.\n"
+    "Do not use JSON. Write natural text."
 )
 
 USER_PROMPT_TEMPLATE = (

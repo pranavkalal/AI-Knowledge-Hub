@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.pydantic_v1 import PrivateAttr
+from pydantic.v1 import PrivateAttr
 
 from rag.retrieval.utils import prepare_hits, resolve_retrieval_settings
 from rag.retrieval.pdf_links import enrich_metadata
@@ -204,7 +204,19 @@ class PortsRetriever(BaseRetriever):
 
         ann_start = perf_counter()
         overfetch = int(max(candidate_limit, top_k * 2, candidate_limit * overfetch_factor_val, 32))
-        raw_hits = self._store.search_raw(question, top_k=overfetch)
+        # Pass filters to search_raw for hybrid search / metadata filtering
+        if hasattr(self._store, "search_raw"):
+             # Check if search_raw accepts filters (it should now)
+            import inspect
+            sig = inspect.signature(self._store.search_raw)
+            if "filters" in sig.parameters:
+                raw_hits = self._store.search_raw(question, top_k=overfetch, filters=filters)
+            else:
+                raw_hits = self._store.search_raw(question, top_k=overfetch)
+        else:
+             # Fallback (should be caught by check above)
+             raw_hits = []
+
         ann_ms = (perf_counter() - ann_start) * 1000.0
 
         prepare_start = perf_counter()

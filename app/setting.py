@@ -7,7 +7,7 @@ Central configuration for the Cotton RAG API.
 - Import `from app.settings import settings` anywhere in the project to access shared config.
 """
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from pathlib import Path
 
 
@@ -28,13 +28,20 @@ class Settings(BaseSettings):
     embs_path: Path = Path("data/embeddings/embeddings.npy")    # Array of dense embeddings
 
     # ---------- Embedding model & retrieval defaults ----------
-    embed_model: str = "BAAI/bge-small-en-v1.5"  # Model used for embeddings
+    embed_model: str = "text-embedding-3-small"  # Model used for embeddings
+    llm_model: str = "gpt-4o"                    # Model used for generation
+    rerank_model: str = "text-embedding-3-large" # Model used for reranking
+    
+    embedding_adapter: str = "openai"            # Adapter: 'openai' or 'bge'
+    rerank_adapter: str = "openai"               # Adapter: 'openai' or 'bge'
+
     per_doc: int = 2                             # Diversification: max chunks per doc
     neighbors: int = 2                           # Extra neighbor chunks to stitch for context
 
     class Config:
         # Allows values to be overridden via a `.env` file or env vars
         env_file = ".env"
+        extra = "ignore"
 
 
 # Singleton settings instance used across the app

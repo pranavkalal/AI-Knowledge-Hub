@@ -1,87 +1,79 @@
-# Summary
+# CRDC AI Knowledge Hub
+*Unlocking 40+ years of Australian Cotton Research with AI.*
 
-The AI-Enhanced Knowledge Hub for the Australian Cotton Industry is a modular, Retrieval-Augmented Generation (RAG) system designed for the Cotton Research and Development Corporation (CRDC). It ingests decades of cotton research reports, processes them into structured and unstructured data, and enables users to search, ask questions, and generate evidence-based insights through a conversational interface.
+## 🚀 Overview
+
+The **CRDC AI Knowledge Hub** is an intelligent search and question-answering system designed to make decades of agricultural research instantly accessible. By leveraging advanced **Retrieval-Augmented Generation (RAG)**, it transforms static PDF reports into a dynamic knowledge base, allowing researchers, agronomists, and stakeholders to ask questions and get evidence-based answers in seconds.
+
+## ✨ Key Features
+
+- **🤖 Intelligent Q&A**: Ask natural language questions like *"What are the best irrigation practices for cotton?"* and get comprehensive answers.
+- **📄 Evidence-Based**: Every answer is backed by citations from official CRDC research papers.
+- **🔍 Deep Linking**: Click a citation to jump directly to the exact paragraph in the original PDF source.
+- **🧠 Advanced Understanding**: Uses state-of-the-art AI to understand context, tables, and technical terminology.
+- **⚡ Hybrid Search**: Combines semantic understanding with keyword precision for accurate results.
+
+## 🛠️ Technology Stack
+
+Built with modern, scalable technologies:
+
+- **AI & LLM**: OpenAI GPT-4o, Text-Embedding-3
+- **Backend**: Python, FastAPI, LangChain
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Database**: PostgreSQL (Vector Store & Metadata)
+- **PDF Processing**: Azure Document Intelligence
+
+## 📸 How It Works
+
+1.  **Ingestion**: Research PDFs are processed to extract text, tables, and layout using Azure Document Intelligence.
+2.  **Indexing**: Content is semantically analyzed, chunked, and stored in PostgreSQL with vector embeddings.
+3.  **Retrieval**: User questions are matched with the most relevant research using hybrid search (Vector + Keyword).
+4.  **Generation**: AI synthesizes an answer using *only* the retrieved facts, ensuring accuracy.
 
 ---
 
-## Why it matters
+## 👨‍💻 Developer Guide
 
-- CRDC holds over 40 years of Australian cotton research, yet most of it sits locked inside PDFs. Finding relevant insights requires manual search and expert knowledge.
-- This project transforms that archive into a living knowledge system—one that connects data, documents, and AI reasoning to support researchers, policymakers, and growers.
-- By prototyping a secure, explainable, and Microsoft-compatible RAG framework, the team lays groundwork for:
-  - Faster evidence discovery across decades of reports.
-  - Transparent answers with citations to original sources.
-  - Extensible architecture for future integration with graphs, OCR, and Azure AI Search.
-- The result isn’t just an AI chatbot—it’s a step toward data-driven decision-making in sustainable agriculture.
+### Quick Start
 
----
-
-## Quick start
-
+**1. Clone & Install**
 ```bash
-# 1. Clone & install
 git clone https://github.com/your-org/AI-Knowledge-Hub.git
 cd AI-Knowledge-Hub
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
 
-# 2. Configure runtime (OpenAI preset by default)
-cp .env.example .env   # add API keys, tweak COTTON_RUNTIME, etc.
-
-# 3. Build the corpus (ingest → chunk → embed → index)
-invoke build
-
-# 4. Run API + Streamlit UI
-invoke dev
-# API: http://localhost:8000/docs
-# UI:  http://localhost:8501
+# Install dependencies (Backend & Frontend)
+make install
 ```
 
-> Need Ollama, GPU OCR, or alternative embeddings? See `docs/requirements.md`.
+**2. Configure Environment**
+```bash
+cp .env.example .env
+```
+*Edit `.env` to add your `OPENAI_API_KEY` and `POSTGRES_CONNECTION_STRING`.*
 
----
+**3. Run the App**
+```bash
+make dev
+```
+*This launches both the API (http://localhost:8000) and Frontend (http://localhost:3000).*
 
-## Tech stack snapshot
+### Common Commands
 
-| Layer | Tooling | Notes |
-|-------|---------|-------|
-| Orchestration | LangChain (`rag/chain.py`) | Structured outputs, fallback runnables |
-| Retrieval | FAISS dense index | Configurable candidate pool + telemetry |
-| Embeddings | OpenAI or BGE (config-based) | Cosine scoring, chunk metadata retained |
-| Reranker | OpenAI embedding reranker | Pool stats + latency logging |
-| Ingestion | Custom crawler + OCR-ready parsing | YAML-driven sources, skip lists, retry logic |
-| Front end | Streamlit + FastAPI | Shared chain wrapper keeps answers consistent |
-| LLMs | OpenAI Chat models (plus local adapters) | Structured JSON answers, fallback stack |
-| Tooling | Invoke, regression scripts | CI-friendly recall/latency checks |
+| Command | Description |
+| :--- | :--- |
+| `make dev` | Run full stack (API + UI) |
+| `make ingest` | Run PDF ingestion pipeline |
+| `make test` | Run backend tests |
+| `make fmt` | Format code |
 
-Chunking stitches neighbour windows so citations provide enough context. Metadata tracks page numbers, file paths, and snippet lengths for prompt construction and future PDF highlighting.
+### Repository Structure
 
----
+- **`app/`**: FastAPI backend application
+- **`frontend/`**: Next.js user interface
+- **`rag/`**: Core RAG logic (Ingestion, Retrieval, Chains)
+- **`scripts/`**: Utility scripts for data processing
+- **`data/`**: Storage for raw PDFs and logs
 
-## Highlights
+## 📄 License
 
-- **Structured answers for researchers & growers** – The UI surfaces cited summaries, key points, and conclusions in language stakeholders can act on quickly.
-- **Configurable retrieval depth** – Multi-query expansion, compression, and reranking help surface agronomic nuance buried in long reports.
-- **Traceable answers** – Inline citations jump back to source passages (PDF highlighting planned in the next phase).
-
----
-
-## Documentation
-
-| Topic | File |
-|-------|------|
-| System + runtime requirements | `docs/requirements.md` |
-| Deployment guide (API, UI, environments) | `docs/deployment.md` |
-| Architecture overview | `docs/architecture.md` |
-| LangChain orchestration & schema | `docs/orchestration.md` |
-| Ingestion pipeline & config keys | `docs/ingestion.md` |
-| Evaluation & regression workflows | `docs/evaluation.md` |
-
----
-
-## Next steps
-
-- Evolve from standard dense RAG to **GraphRAG** for richer cross-report reasoning.
-- Plug in structured agronomy data and support multiple personas (researchers, growers, policy teams).
-- Add conversational memory so returning users build on prior sessions.
-- Harden cloud deployment (container images, managed vector DB, observability stack).
+MIT License - see [LICENSE](LICENSE)

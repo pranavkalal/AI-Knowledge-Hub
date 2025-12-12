@@ -23,13 +23,15 @@ def _coerce_bool(value: Any, default: bool) -> bool:
         return default
 
 
+from app.setting import settings
+
 def load_embedder(embed_cfg: Mapping[str, Any] | None, env: Mapping[str, str] | None = None):
     """Instantiate an embedding adapter based on config/environment."""
 
     env_map = dict(os.environ if env is None else env)
     cfg = dict(embed_cfg or {})
 
-    adapter_name = cfg.get("adapter") or env_map.get("EMB_ADAPTER") or "bge_local"
+    adapter_name = cfg.get("adapter") or env_map.get("EMB_ADAPTER") or settings.embedding_adapter or "openai"
     adapter_key = adapter_name.lower()
 
     normalize = _coerce_bool(cfg.get("normalize"), True)

@@ -19,7 +19,7 @@ try:
 except ImportError:  # pragma: no cover - very old Python
     import_module = None
 
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.documents import Document
 from langchain_core.runnables import Runnable, RunnableLambda, RunnableWithFallbacks
 
@@ -334,7 +334,7 @@ def build_chain(
 
     if use_multiquery:
         try:
-            from langchain.retrievers import MultiQueryRetriever
+            from langchain_community.retrievers import MultiQueryRetriever
             adapter_name = (llm_config or {}).get("adapter", "ollama").lower() if isinstance(llm_config, dict) else "ollama"
             model_name = (llm_config or {}).get("model") if isinstance(llm_config, dict) else None
 
@@ -356,8 +356,8 @@ def build_chain(
 
     if use_compression:
         try:
-            from langchain.retrievers import ContextualCompressionRetriever
-            from langchain.retrievers.document_compressors import EmbeddingsFilter
+            from langchain_community.retrievers import ContextualCompressionRetriever
+            from langchain_community.retrievers.document_compressors import EmbeddingsFilter
 
             class _EmbeddingsWrapper:
                 def __init__(self, adapter):
@@ -398,7 +398,7 @@ def build_chain(
         fallback_runnables.append(adapter_runnable)
         fallback_runnables.append(pipeline_fallback)
         llm_core = RunnableWithFallbacks(
-            runnable=_structured_chat_runnable(chat_llm),
+            runnable=_chat_plain_runnable(chat_llm),
             fallbacks=fallback_runnables,
         )
     else:

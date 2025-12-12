@@ -254,6 +254,29 @@ def prepare_hits(
         if settings.diversify_per_doc and settings.per_doc > 0 and per_doc_counts[doc_id] >= settings.per_doc:
             continue
 
+        # Pre-fetch neighbors if needed for stitching
+        if settings.neighbors > 0:
+            nids = neighbor_ids(chunk_id, settings.neighbors)
+            missing_nids = [nid for nid in nids if nid not in lookup]
+            
+            if missing_nids:
+                if hasattr(store, "get_metadata_batch"):
+                    try:
+                        batch = store.get_metadata_batch(missing_nids)
+                        if batch:
+                            lookup.update(batch)
+                    except Exception:
+                        pass
+                elif hasattr(store, "get_metadata"):
+                    # Fallback to single fetch
+                    for nid in missing_nids:
+                        try:
+                            extra = store.get_metadata(nid)
+                            if extra:
+                                lookup[nid] = extra
+                        except Exception:
+                            pass
+
         preview_lookup = lookup if lookup else {chunk_id: meta}
         preview = stitch_preview(
             meta,

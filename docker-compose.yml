@@ -21,16 +21,18 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.ui
-    container_name: cotton_ui
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: cotton_db
     ports:
-      - "8501:8501"
+      - "5432:5432"
     environment:
-      # Point to the API service name within the docker network
-      - COTTON_API_BASE=http://api:8000/api
-    depends_on:
-      - api
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=knowledge_hub
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+
+volumes:
+  postgres_data:

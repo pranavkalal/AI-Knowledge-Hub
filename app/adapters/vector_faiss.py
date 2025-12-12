@@ -10,8 +10,8 @@ from typing import List, Dict, Optional, Mapping
 import numpy as np
 import json
 from functools import lru_cache
+import faiss
 from app.ports import VectorStorePort
-from store.store_faiss import FaissFlatIP
 
 
 class FaissStoreAdapter(VectorStorePort):
@@ -19,15 +19,14 @@ class FaissStoreAdapter(VectorStorePort):
         self,
         index_path: str,
         ids_path: str,
-        meta_path: str = "data/staging/chunks.jsonl",
+        meta_path: str = "data/staging/chunks.jsonl", # Kept for signature compatibility
         embed_model: Optional[str] = None,
         embed_config: Optional[Mapping[str, object]] = None,
     ):
-        # Load your wrapper class (not the raw faiss index)
-        self.ff = FaissFlatIP.load(index_path)
+        # Load raw faiss index
+        self.index = faiss.read_index(index_path)
         self.ids = np.load(ids_path, allow_pickle=True)
-        self.meta_path = meta_path
-        self._meta = None
+        # self.meta_path = meta_path # Unused now
         self._embed_model = embed_model or os.environ.get("EMB_MODEL", "BAAI/bge-small-en-v1.5")
         self._embedder = None
         self._embed_config: Dict[str, object] = dict(embed_config or {})
@@ -36,26 +35,20 @@ class FaissStoreAdapter(VectorStorePort):
         if adapter:
             self._embed_config["adapter"] = adapter
 
-    def _load_meta(self) -> dict:
-        if self._meta is None:
-            self._meta = {}
-            with open(self.meta_path, encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    rec = json.loads(line)
-                    cid = rec.get("id")
-                    if cid:
-                        self._meta[cid] = rec
-        return self._meta
-
     def get_meta_map(self) -> dict:
-        """Expose cached metadata for downstream utilities."""
-        return self._load_meta()
+        """Expose cached metadata for downstream utilities. 
+        DEPRECATED: Returns empty dict to force on-demand fetch."""
+        return {}
 
     def get_metadata(self, chunk_id: str) -> dict | None:
         """Return metadata for a specific chunk id."""
-        return self._load_meta().get(chunk_id)
+        from rag.store.sqlite_store import get_chunk_by_id
+        return get_chunk_by_id(chunk_id)
+
+    def get_metadata_batch(self, chunk_ids: List[str]) -> Dict[str, Dict]:
+        """Return metadata for multiple chunk ids."""
+        from rag.store.sqlite_store import get_chunks_batch
+        return get_chunks_batch(chunk_ids)
 
     @lru_cache(maxsize=1)
     def _ensure_embedder(self):
@@ -69,19 +62,28 @@ class FaissStoreAdapter(VectorStorePort):
 
     def query(self, query_vector: List[float], k: int) -> List[Dict]:
         q = np.array(query_vector, dtype="float32")[None, :]
-        D, I = self.ff.search(q, k)
-        meta = self._load_meta()
-        hits = []
+        D, I = self.index.search(q, k)
+        
+        # Get IDs of hits
+        hit_ids = []
+        hit_scores = []
         for score, idx in zip(D[0], I[0]):
             if idx < 0:
                 continue
-            chunk_id = self.ids[idx]
-            md = meta.get(chunk_id, {})
-            score_float = float(score)
+            hit_ids.append(self.ids[idx])
+            hit_scores.append(float(score))
+            
+        # Fetch metadata from SQLite
+        from rag.store.sqlite_store import get_chunks_batch
+        meta_map = get_chunks_batch(hit_ids)
+        
+        hits = []
+        for chunk_id, score in zip(hit_ids, hit_scores):
+            md = meta_map.get(chunk_id, {})
             hits.append({
                 "id": chunk_id,
-                "score": score_float,
-                "faiss_score": score_float,
+                "score": score,
+                "faiss_score": score,
                 "metadata": md,
             })
         return hits

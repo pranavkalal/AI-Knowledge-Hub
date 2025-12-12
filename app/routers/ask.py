@@ -47,6 +47,7 @@ class Citation(BaseModel):
     name: Optional[str] = None      # some docs have 'name' separate to 'title'
     year: Optional[int] = None
     page: Optional[int] = None
+    bbox: Optional[List[float]] = None  # [x, y, width, height] for deep linking
     span: Optional[str] = None      # mapped from pipeline "snippet"
     score: Optional[float] = None   # original retrieval score
     cosine: Optional[float] = None  # alias (when vectors are L2-normalized)
@@ -112,6 +113,35 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
     for s in raw_sources:
         page_val = _coerce_page(s.get("page"))
         rel_path = s.get("rel_path") or s.get("filename")
+        
+        # Extract bbox if available (for deep linking)
+        # Extract bbox if available (for deep linking)
+        # DB stores 'bboxes' (list of dicts with 'polygon'), we want 'bbox' [x, y, w, h]
+        bbox = s.get("bbox")
+        bboxes = s.get("bboxes")
+        
+        if not bbox and bboxes and isinstance(bboxes, list) and len(bboxes) > 0:
+            # Take the first bbox as a fallback/default highlight
+            first_bbox = bboxes[0]
+            if isinstance(first_bbox, dict) and "polygon" in first_bbox:
+                poly = first_bbox["polygon"]
+                if isinstance(poly, list) and len(poly) >= 8:
+                    # Convert 8-point polygon to [x, y, w, h]
+                    xs = poly[0::2]
+                    ys = poly[1::2]
+                    min_x, max_x = min(xs), max(xs)
+                    min_y, max_y = min(ys), max(ys)
+                    bbox = [min_x, min_y, max_x - min_x, max_y - min_y]
+
+        if bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            # Ensure all values are floats
+            try:
+                bbox = [float(x) for x in bbox]
+            except (TypeError, ValueError):
+                bbox = None
+        else:
+            bbox = None
+        
         citations.append(
             Citation(
                 sid=s.get("sid"),
@@ -120,6 +150,7 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 name=s.get("name"),
                 year=s.get("year"),
                 page=page_val,
+                bbox=bbox,  # Add bbox for deep linking
                 url=s.get("url"),
                 source_url=s.get("source_url"),
                 rel_path=rel_path,
@@ -131,6 +162,12 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
                 span=s.get("snippet") or s.get("span") or s.get("preview"),
             )
         )
+        
+        # Construct local URL if missing
+        if not citations[-1].url and (citations[-1].filename or citations[-1].rel_path):
+            fname = citations[-1].filename or citations[-1].rel_path
+            # Use the filename endpoint
+            citations[-1].url = f"/api/pdf/{fname}"
 
     latency_ms = int((perf_counter() - t0) * 1000)
     return AskResponse(
