@@ -41,19 +41,19 @@ const personaConfig = {
     cards: [
       {
         icon: Microscope,
-        text: "What are the mechanisms of disease suppression in cotton soils?",
+        text: "How are DNA diagnostics used to monitor disease suppressive soils?",
         color: "text-purple-600",
         bg: "bg-purple-50",
       },
       {
         icon: Beaker,
-        text: "How does dissolved organic nitrogen affect nutrient cycling?",
+        text: "What research exists on silverleaf whitefly resistance monitoring?",
         color: "text-blue-600",
         bg: "bg-blue-50",
       },
       {
         icon: FlaskConical,
-        text: "What are the latest findings on insect resistance monitoring?",
+        text: "What are the findings on nitrogen cycling from farm to catchment?",
         color: "text-amber-600",
         bg: "bg-amber-50",
       },

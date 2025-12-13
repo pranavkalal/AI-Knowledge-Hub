@@ -9,7 +9,7 @@ orchestrator: langchain
 
 embedder:
   adapter: openai
-  model: text-embedding-3-large  # ⬆️ Upgraded from small for better retrieval
+  model: text-embedding-3-large  
   batch_size: 256
   normalize: true
   max_retries: 5
@@ -29,9 +29,9 @@ reranker:
 
 llm:
   adapter: openai
-  model: gpt-4o  # ⬆️ Upgraded from mini for better answer quality
+  model: gpt-4o  #
   temperature: 0.2
-  max_output_tokens: 1000  # ⬆️ Allow fuller answers
+  max_output_tokens: 1000  
   max_retries: 3
   timeout: 60
 
@@ -53,7 +53,7 @@ langchain:
   stream: true
   use_chat_openai: true
   chat_openai:
-    model: gpt-4o  # ⬆️ Upgraded from mini
+    model: gpt-4o  
     temperature: 0.2
     max_output_tokens: 1000
     max_retries: 3

@@ -17,31 +17,33 @@ The system is containerized using Docker and consists of the following core serv
 - **Language**: Python 3.11+
 - **Framework**: FastAPI
 - **Orchestration**: LangChain (LCEL)
-- **LLM**: OpenAI GPT-4o-mini
-- **Embeddings**: OpenAI `text-embedding-3-small`
-- **PDF Parsing**: IBM Docling (Multi-modal parsing)
-- **Vector Store**: PostgreSQL (`pgvector`) / FAISS (Legacy/Hybrid)
+- **LLM**: OpenAI `gpt-4o`
+- **Embeddings**: OpenAI `text-embedding-3-large` (3072-dim)
+- **PDF Parsing**: Azure Document Intelligence (Layout model with bbox extraction)
+- **Vector Store**: PostgreSQL + `pgvector` (hybrid search)
+- **Reranking**: OpenAI embedding-based cross-encoder
 
 ### Frontend
-- **Framework**: Next.js 16 (React 19)
+- **Framework**: Next.js (React 19)
 - **Styling**: Tailwind CSS, shadcn/ui
 - **State Management**: Zustand
-- **PDF Rendering**: `react-pdf`
+- **PDF Rendering**: `react-pdf` with deep linking highlights
 
 ### Infrastructure
 - **Containerization**: Docker, Docker Compose
-- **Database**: PostgreSQL 16
+- **Database**: PostgreSQL 16 with pgvector extension
 
 ## Key Features
-1.  **Intelligent Retrieval**: Hybrid search combining dense vector similarity with keyword search (using PostgreSQL `tsvector` or BM25).
+1.  **Hybrid Search**: Combines dense vector similarity with keyword search using PostgreSQL `tsvector`.
 2.  **Deep Linking**: Stores bounding box coordinates for text chunks, allowing the frontend to highlight exact passages in the PDF.
-3.  **Semantic Chunking**: Context-aware chunking that respects document structure (sections, paragraphs).
+3.  **Semantic Chunking**: Context-aware chunking that respects document structure (sections, paragraphs) with bbox mapping.
 4.  **Citation Support**: Answers include citations that link directly to the source document and page.
-5.  **Batched Ingestion**: Robust pipeline for processing large volumes of PDFs without memory issues.
+5.  **Persona-Based Responses**: Adapts answer style for growers, researchers, or extension officers.
+6.  **Reranking**: Cross-encoder reranking for improved retrieval precision.
 
 ## Data Flow
-1.  **Ingestion**: PDFs are placed in `data/raw`. Scripts parse them using Docling, extracting text and layout info.
-2.  **Processing**: Text is chunked semantically and embedded using OpenAI models.
-3.  **Storage**: Metadata, text chunks, and embeddings are stored in PostgreSQL.
-4.  **Retrieval**: User queries are embedded and matched against stored vectors. Top matches are reranked (optional).
-5.  **Generation**: Retrieved context is sent to the LLM to generate an answer with citations.
+1.  **Ingestion**: PDFs in `data/raw` are parsed using Azure Document Intelligence, extracting Markdown text and bounding boxes.
+2.  **Processing**: Text is semantically chunked with bbox coordinates preserved, then embedded using OpenAI.
+3.  **Storage**: Metadata, text chunks, embeddings, and bboxes are stored in PostgreSQL with pgvector.
+4.  **Retrieval**: User queries are embedded and matched via hybrid search. Top matches are reranked.
+5.  **Generation**: Retrieved context is sent to GPT-4o with persona-aware prompts to generate cited answers.
