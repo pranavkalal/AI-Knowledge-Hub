@@ -325,6 +325,8 @@ def main():
                         "page_height": page.get("height"),
                         # Store only matching bboxes (much smaller than all page bboxes)
                         "bboxes": matching_bboxes,
+                        # Union bbox for deep linking highlight (single rect covering all matches)
+                        "union_bbox": union_bbox,
                     }
                     
                     all_chunks.append({

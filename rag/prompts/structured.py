@@ -91,7 +91,7 @@ class StructuredAnswer(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
-        anystr_strip_whitespace = True
+        str_strip_whitespace = True
 
 
 def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:

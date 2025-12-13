@@ -1,24 +1,97 @@
 # app/adapters/vector_postgres.py
 import os
+import re
 import json
 import logging
 from typing import List, Dict, Any, Optional
 import numpy as np
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
 
 logger = logging.getLogger(__name__)
 
+# Regex pattern for valid SQL identifiers (table names, column names)
+# Allows: starts with letter or underscore, followed by letters, numbers, underscores
+VALID_SQL_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def validate_table_name(table_name: str) -> str:
+    """
+    Validate and sanitize a table name to prevent SQL injection.
+    
+    Args:
+        table_name: The table name to validate
+        
+    Returns:
+        The validated table name
+        
+    Raises:
+        ValueError: If the table name is invalid
+    """
+    if not table_name:
+        raise ValueError("Table name cannot be empty")
+    
+    if len(table_name) > 63:  # PostgreSQL identifier limit
+        raise ValueError(f"Table name too long (max 63 chars): {table_name}")
+    
+    if not VALID_SQL_IDENTIFIER.match(table_name):
+        raise ValueError(
+            f"Invalid table name '{table_name}'. "
+            "Table names must start with a letter or underscore, "
+            "and contain only letters, numbers, and underscores."
+        )
+    
+    # Additional check for reserved words (basic list)
+    reserved_words = {'select', 'insert', 'update', 'delete', 'drop', 'table', 
+                      'database', 'index', 'create', 'alter', 'grant', 'revoke'}
+    if table_name.lower() in reserved_words:
+        raise ValueError(f"Table name '{table_name}' is a reserved SQL keyword")
+    
+    return table_name
+
+
 class PostgresStoreAdapter:
-    def __init__(self, table_name: str = "chunks", connection_string: Optional[str] = None, embedder: Any = None):
-        self.table_name = table_name
+    """
+    PostgreSQL vector store adapter with pgvector support.
+    
+    Features:
+    - Connection pooling for better performance
+    - Hybrid search (vector + keyword)
+    - Metadata filtering (year, doc_id, contains)
+    """
+    
+    def __init__(
+        self, 
+        table_name: str = "chunks", 
+        connection_string: Optional[str] = None, 
+        embedder: Any = None,
+        pool_size: int = 5,
+        max_overflow: int = 10,
+    ):
+        # Validate table name to prevent SQL injection
+        self.table_name = validate_table_name(table_name)
+        
         self.connection_string = connection_string or os.environ.get("POSTGRES_CONNECTION_STRING")
         if not self.connection_string:
             raise ValueError("Missing POSTGRES_CONNECTION_STRING environment variable")
         
         self.embedder = embedder
-        self.engine = create_engine(self.connection_string)
+        
+        # Connection pooling configuration
+        self.engine = create_engine(
+            self.connection_string,
+            poolclass=QueuePool,
+            pool_size=pool_size,          # Number of persistent connections
+            max_overflow=max_overflow,     # Additional connections allowed
+            pool_pre_ping=True,           # Verify connections before use
+            pool_recycle=3600,            # Recycle connections after 1 hour
+        )
         self.Session = sessionmaker(bind=self.engine)
+        logger.info(
+            "PostgresStoreAdapter initialized: table=%s, pool_size=%d, max_overflow=%d",
+            table_name, pool_size, max_overflow
+        )
         
         # Ensure pgvector extension and table exist
         self._init_db()
@@ -161,6 +234,13 @@ class PostgresStoreAdapter:
                     # Use NULLIF to handle empty strings, COALESCE for nulls  
                     where_clauses.append("COALESCE(NULLIF(metadata->>'year', '')::int, 9999) <= :year_max")
                     params["year_max"] = filters["year_max"]
+                
+                if "contains" in filters:
+                    # Filter by text content containing a keyword/phrase
+                    contains_val = filters["contains"]
+                    if contains_val:
+                        where_clauses.append("text ILIKE :contains_pattern")
+                        params["contains_pattern"] = f"%{contains_val}%"
 
             where_sql = " AND ".join(where_clauses)
             if where_sql:
@@ -221,10 +301,12 @@ class PostgresStoreAdapter:
                     params["year_max"] = filters["year_max"]
                     
                 if "contains" in filters:
-                    # 'contains' is usually a list of strings for exact match in metadata or text
-                    # For simplicity, let's assume it filters by filename or title if present
-                    # Or we can use it as a keyword filter on the text
-                    pass 
+                    # Filter by text content containing a keyword/phrase
+                    # Uses case-insensitive ILIKE for flexibility
+                    contains_val = filters["contains"]
+                    if contains_val:
+                        where_clauses.append("text ILIKE :contains_pattern")
+                        params["contains_pattern"] = f"%{contains_val}%"
 
             where_sql = " AND ".join(where_clauses)
             if where_sql:

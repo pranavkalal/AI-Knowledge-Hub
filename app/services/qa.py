@@ -3,6 +3,7 @@ End-to-end QA pipeline: embed query -> retrieve -> (optional) rerank -> build pr
 Returns the generated answer and normalized source list for the API layer.
 """
 
+import logging
 from time import perf_counter
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
@@ -12,6 +13,8 @@ from rag.retrieval.utils import (
     resolve_retrieval_settings,
     prepare_hits,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class QAPipeline:
@@ -79,7 +82,7 @@ class QAPipeline:
         # 4) stitch metadata before reranking
         stitch_start = perf_counter()
         stitched_hits = prepare_hits(hits, self.store, settings, limit=candidate_limit)
-        print(f"[qa.debug] candidates_before_rerank={len(stitched_hits)}")
+        logger.debug("candidates_before_rerank=%d", len(stitched_hits))
         stitch_ms = (perf_counter() - stitch_start) * 1000.0
 
         # 5) optional rerank
@@ -97,9 +100,7 @@ class QAPipeline:
         
         # 6) limit to requested k after rerank
         hits = final_hits[:k]
-        print(
-            f"[qa.debug] after_rerank={len(final_hits)} final_k={len(hits)}"
-        )
+        logger.debug("after_rerank=%d final_k=%d", len(final_hits), len(hits))
 
         if not hits:
             # no retrieval = don't pay LLM tax
@@ -139,9 +140,9 @@ class QAPipeline:
 
         total_ms = (perf_counter() - total_start) * 1000.0
         rerank_batches = getattr(self.rerank, "last_batches", 0) if do_rerank else 0
-        print(
-            f"[qa.timing] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
-            f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
+        logger.info(
+            "QA timing: ANN=%.1fms stitch=%.1fms rerank=%.1fms total=%.1fms rerank_batches=%d",
+            ann_ms, stitch_ms, rerank_ms, total_ms, rerank_batches
         )
 
         if citations:

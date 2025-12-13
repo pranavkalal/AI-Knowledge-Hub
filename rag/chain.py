@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from contextvars import ContextVar
 from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 try:
     from importlib import import_module
@@ -357,7 +360,7 @@ def build_chain(
                 llm=retriever_llm,
             )
         except Exception as exc:
-            print(f"[warn] MultiQueryRetriever unavailable: {exc}")
+            logger.warning("MultiQueryRetriever unavailable: %s", exc)
 
     if use_compression:
         try:
@@ -380,7 +383,7 @@ def build_chain(
                 base_compressor=EmbeddingsFilter(embeddings=embeddings_wrapper),
             )
         except Exception as exc:
-            print(f"[warn] Compression retriever unavailable: {exc}")
+            logger.warning("Compression retriever unavailable: %s", exc)
 
     retrieval_runner: Runnable = _RetrievalRunnable(
         retriever=retriever,
@@ -439,7 +442,7 @@ def build_chain(
         try:
             callbacks.append(LoggingCallbackHandler())
         except Exception as exc:
-            print(f"[warn] LoggingCallbackHandler unavailable: {exc}")
+            logger.warning("LoggingCallbackHandler unavailable: %s", exc)
     if langchain_cfg.get("stream"):
         callbacks.append(StreamingStdOutCallbackHandler())
 

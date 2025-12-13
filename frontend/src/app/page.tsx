@@ -114,7 +114,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col relative bg-white px-4">
+    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col relative bg-background px-4">
       {/* Top Logo Area */}
       <div className="absolute top-4 left-4">
         <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
@@ -128,10 +128,10 @@ export default function Home() {
           className="w-full max-w-3xl space-y-8 text-center"
         >
           <motion.div variants={item} className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-slate-900">
-              Unlock <span className="text-[#692080]">Cotton Research</span>
+            <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-slate-900 dark:text-white font-heading">
+              Unlock <span className="text-[#692080] dark:text-purple-400">Cotton Research</span>
             </h1>
-            <p className="mx-auto max-w-[700px] text-slate-500 md:text-xl">
+            <p className="mx-auto max-w-[700px] text-slate-500 dark:text-slate-400 md:text-xl">
               Ask complex questions about Australian cotton R&D. Get answers grounded in
               verified reports, with direct citations to the source PDF.
             </p>
@@ -140,19 +140,19 @@ export default function Home() {
           <motion.div variants={item} className="mx-auto w-full max-w-2xl">
             <form onSubmit={handleSearch} className="relative group">
               <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 opacity-0 transition-opacity duration-500 group-hover:opacity-100 blur-xl" />
-              <div className="relative flex items-center rounded-3xl bg-[#f0f4f9] px-4 py-3 shadow-sm transition-all focus-within:bg-white focus-within:shadow-md hover:bg-[#e2e7eb]">
+              <div className="relative flex items-center rounded-3xl bg-slate-100 dark:bg-slate-800 px-4 py-3 shadow-sm transition-all focus-within:bg-white dark:focus-within:bg-slate-700 focus-within:shadow-md hover:bg-slate-200 dark:hover:bg-slate-700">
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={currentConfig.placeholder}
-                  className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 dark:placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-white"
                 />
                 <div className="flex items-center space-x-2 text-slate-400">
                   <div className="relative">
                     <select
                       value={persona}
                       onChange={(e) => setPersona(e.target.value as PersonaType)}
-                      className="appearance-none bg-white border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm text-slate-600 cursor-pointer hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                      className="appearance-none bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 text-sm text-slate-600 dark:text-slate-200 cursor-pointer hover:border-slate-300 dark:hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                     >
                       <option value="grower">🌱 Grower</option>
                       <option value="researcher">🔬 Researcher</option>
@@ -189,12 +189,12 @@ export default function Home() {
                 <div
                   key={i}
                   onClick={() => setQuery(card.text)}
-                  className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-[#f0f4f9] p-4 text-center transition-all hover:bg-[#dde3ea]"
+                  className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 p-4 text-center transition-all hover:bg-slate-200 dark:hover:bg-slate-700"
                 >
-                  <div className="mb-3 rounded-full bg-white p-2 shadow-sm">
+                  <div className="mb-3 rounded-full bg-white dark:bg-slate-700 p-2 shadow-sm">
                     <card.icon className={`h-6 w-6 ${card.color}`} />
                   </div>
-                  <p className="text-sm font-medium text-slate-700">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                     {card.text}
                   </p>
                 </div>
