@@ -9,15 +9,15 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["feedback"])
 
-
-def get_limiter(request: Request):
-    """Get the app-level limiter from request state."""
-    return request.app.state.limiter
+# Rate limiter for this router
+limiter = Limiter(key_func=get_remote_address)
 
 
 class FeedbackRequest(BaseModel):
@@ -31,16 +31,13 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/feedback")
+@limiter.limit("20/minute")  # Rate limit feedback submissions
 async def submit_feedback(request: Request, feedback: FeedbackRequest):
     """
     Submit user feedback on an AI response.
     
     For now, we'll just log it. Later, we can persist to PostgreSQL.
     """
-    # Rate limiting via app-level limiter (20 requests/minute)
-    limiter = get_limiter(request)
-    await limiter._check_request_limit(request, None, "20/minute")
-    
     try:
         # Log feedback for now (later: save to database)
         logger.info(

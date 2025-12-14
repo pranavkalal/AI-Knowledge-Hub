@@ -154,10 +154,15 @@ async def log_startup_config():
 
 
 
-# Root: be nice during dev instead of 404ing
+# Root: redirect to appropriate endpoint based on environment
 @app.get("/", include_in_schema=False)
 def root():
-    return RedirectResponse(url="/docs")
+    if IS_PRODUCTION:
+        # In production, docs are disabled - redirect to health check
+        return RedirectResponse(url="/api/health")
+    else:
+        # In development, redirect to Swagger docs
+        return RedirectResponse(url="/docs")
 
 
 # Quick ping that doesn't depend on your routers
