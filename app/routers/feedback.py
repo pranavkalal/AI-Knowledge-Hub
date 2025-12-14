@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -19,13 +19,13 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 class FeedbackRequest(BaseModel):
-    message_id: str
-    session_id: Optional[str] = None
-    score: int  # 1 for thumbs up, -1 for thumbs down
-    comment: Optional[str] = None
-    reason_code: Optional[str] = None  # 'hallucination', 'missing_info', 'style', 'helpful', etc.
-    question: Optional[str] = None  # Store original question for context
-    answer: Optional[str] = None  # Store the answer that was rated
+    message_id: str = Field(..., min_length=1, max_length=100)
+    session_id: Optional[str] = Field(None, max_length=100)
+    score: int = Field(..., ge=-1, le=1)  # -1 for thumbs down, 0 neutral, 1 for thumbs up
+    comment: Optional[str] = Field(None, max_length=1000)  # Limit comment length
+    reason_code: Optional[str] = Field(None, max_length=50)  # 'hallucination', 'missing_info', etc.
+    question: Optional[str] = Field(None, max_length=2000)  # Store original question
+    answer: Optional[str] = Field(None, max_length=10000)  # Store the answer that was rated
 
 
 @router.post("/feedback")
