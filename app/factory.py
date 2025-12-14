@@ -116,7 +116,112 @@ def build_pipeline(cfg_path: str = None):
     llm = OpenAIAdapter(model=model)
 
     # ---------------- Orchestrator toggle ----------------
+    # Options: "native", "langchain" (LCEL), "langgraph" (state machine)
+    # Override with USE_LANGGRAPH=true env var
     orchestrator = (cfg.get("orchestrator") or "native").lower()
+    
+    # Feature flag: USE_LANGGRAPH overrides config
+    use_langgraph_env = os.environ.get("USE_LANGGRAPH", "").strip().lower()
+    if use_langgraph_env in {"1", "true", "yes", "on"}:
+        orchestrator = "langgraph"
+    
+    if orchestrator == "langgraph":
+        # LangGraph state machine with Corrective RAG
+        try:
+            from rag.graph import LangGraphRAGChain
+            from rag.retrievers import PortsRetriever
+        except Exception as e:
+            raise RuntimeError(
+                "orchestrator=langgraph but rag.graph is unavailable. "
+                "Install langgraph and ensure rag/graph.py + rag/nodes/ are present."
+            ) from e
+        
+        r_cfg = cfg.get("retrieval", {}) or {}
+        k = int(r_cfg.get("k", 6))
+        llm_model = cfg.get("llm", {}).get("model", "gpt-4o")
+        
+        # Build retriever using existing adapters
+        retriever = PortsRetriever(
+            store=store,
+            top_k=k * 2,  # Overfetch for grading/reranking
+            neighbors=int(r_cfg.get("neighbors", 1)),
+        )
+        
+        chain = LangGraphRAGChain(
+            retriever=retriever,
+            reranker=reranker,
+            llm_model=llm_model,
+            k=k,
+        )
+        
+        class LangGraphWrapper:
+            """Wrapper to match existing pipeline interface."""
+            
+            def __init__(self, chain, default_k: int):
+                self.chain = chain
+                self.default_k = default_k
+                self.stream_enabled = True  # Enable streaming support
+            
+            def ask(self, question: str, k: int = 6, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
+                payload = {
+                    "question": question,
+                    "k": k or self.default_k,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "persona": kwargs.get("persona", "researcher"),
+                    "filters": kwargs.get("filters", {}),
+                }
+                out = self.chain.invoke(payload)
+                return {
+                    "answer": out.get("answer", ""),
+                    "sources": out.get("citations", []),
+                    "usage": out.get("usage"),
+                    "timings": out.get("timings", []),
+                }
+            
+            async def stream(self, question: str, temperature: float = 0.2, max_tokens: int = 600, **kwargs):
+                """
+                Streaming support for LangGraph.
+                
+                Since LangGraph doesn't natively support token streaming,
+                we run the full graph then simulate streaming by yielding
+                chunks of the answer.
+                """
+                import asyncio
+                
+                payload = {
+                    "question": question,
+                    "k": kwargs.get("k", self.default_k),
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "persona": kwargs.get("persona", "researcher"),
+                    "filters": kwargs.get("filters", {}),
+                }
+                
+                # Run graph in thread to not block
+                out = await asyncio.to_thread(self.chain.invoke, payload)
+                
+                answer = out.get("answer", "")
+                citations = out.get("citations", [])
+                
+                # Yield citations first
+                if citations:
+                    yield {"type": "sources", "data": citations}
+                
+                # Stream answer in chunks (simulate token streaming)
+                chunk_size = 20  # characters per chunk
+                for i in range(0, len(answer), chunk_size):
+                    chunk = answer[i:i + chunk_size]
+                    yield {"type": "token", "token": chunk}
+                    await asyncio.sleep(0.01)  # Small delay for UI smoothness
+                
+                # Final output
+                yield {"type": "final", "output": out}
+        
+        import logging
+        logging.getLogger(__name__).info("Using LangGraph orchestrator (Corrective RAG)")
+        return LangGraphWrapper(chain, k)
+    
     if orchestrator == "langchain":
         # Lazy import so native users don't need langchain installed
         try:

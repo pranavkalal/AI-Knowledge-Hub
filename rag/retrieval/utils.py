@@ -264,6 +264,11 @@ def prepare_hits(
         if not passes_filters(meta, settings.contains, settings.year_min, settings.year_max):
             continue
 
+        # IMPORTANT: Copy text from hit to metadata (Postgres returns it at hit["text"])
+        raw_text = hit.get("text") or ""
+        if raw_text and not meta.get("text"):
+            meta["text"] = raw_text
+
         if settings.diversify_per_doc and settings.per_doc > 0 and per_doc_counts[doc_id] >= settings.per_doc:
             continue
 

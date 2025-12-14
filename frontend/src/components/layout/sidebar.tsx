@@ -23,10 +23,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 
 // Shared navigation content component
-function SidebarNav({ 
-    isCollapsed = false, 
-    onLinkClick 
-}: { 
+function SidebarNav({
+    isCollapsed = false,
+    onLinkClick
+}: {
     isCollapsed?: boolean;
     onLinkClick?: () => void;
 }) {
@@ -80,7 +80,6 @@ function SidebarNav({
                                         onClick={onLinkClick}
                                         className="flex-1 truncate text-slate-600 dark:text-slate-300"
                                     >
-                                        <span className="mr-2">💬</span>
                                         {chat.title}
                                     </Link>
                                     <button
@@ -133,7 +132,7 @@ function SidebarNav({
             <div className="mt-auto px-3 space-y-1">
                 {/* Theme Toggle */}
                 <ThemeToggle collapsed={isCollapsed} />
-                
+
                 {bottomItems.map((item) => (
                     <Link
                         key={item.href}
@@ -183,8 +182,7 @@ function MobileSidebar() {
             </Sheet>
 
             <Link href="/" className="flex items-center gap-2">
-                <img src="/logo.png" alt="CRDC" className="h-6 dark:invert" />
-                <span className="font-semibold text-slate-900 dark:text-white">Knowledge Hub</span>
+                <img src="/logo.png" alt="CRDC" className="h-8 dark:invert" />
             </Link>
 
             <div className="w-10" /> {/* Spacer for centering */}
@@ -222,7 +220,9 @@ function DesktopSidebar() {
                             exit={{ opacity: 0 }}
                             className="ml-4"
                         >
-                            {/* Logo space if needed */}
+                            <Link href="/" className="flex items-center gap-2">
+                                <img src="/logo.png" alt="CRDC" className="h-8 dark:invert" />
+                            </Link>
                         </motion.div>
                     )}
                 </AnimatePresence>

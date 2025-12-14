@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, AlertCircle, Sparkles, Users, Copy, Check, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react";
+import { Send, Bot, User, AlertCircle, Users, Copy, Check, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react";
+import { GeminiIcon } from "@/components/ui/ai-icon";
 import Link from "next/link";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -266,13 +267,6 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
         <div className="flex h-full flex-col bg-background relative">
             <ScrollArea className="flex-1 px-4 sm:px-0">
                 <div className="flex flex-col space-y-8 pb-32 pt-8 max-w-3xl mx-auto">
-                    {/* Logo Area */}
-                    <div className="flex justify-start mb-4">
-                        <Link href="/" className="block transition-opacity hover:opacity-80">
-                            <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
-                        </Link>
-                    </div>
-
                     <AnimatePresence initial={false}>
                         {messages.map((msg) => (
                             <motion.div
@@ -283,7 +277,14 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
                             >
                                 {msg.role === "assistant" && (
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
-                                        {msg.error ? <AlertCircle className="h-6 w-6 text-red-500" /> : <Sparkles className="h-6 w-6 text-[#4285f4] animate-pulse" />}
+                                        {msg.error ? (
+                                            <AlertCircle className="h-6 w-6 text-red-500" />
+                                        ) : (
+                                            <GeminiIcon
+                                                isStreaming={msg.isStreaming || (isLoading && !msg.content)}
+                                                size="md"
+                                            />
+                                        )}
                                     </div>
                                 )}
 
@@ -296,10 +297,10 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
                                             <ReactMarkdown>{msg.content}</ReactMarkdown>
                                         ) : (
                                             isLoading && msg.role === "assistant" && !msg.error && (
-                                                <div className="flex items-center gap-1 h-6">
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.3s]"></span>
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.15s]"></span>
-                                                    <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400"></span>
+                                                <div className="space-y-3 py-1 min-w-[200px]">
+                                                    <div className="h-4 w-3/4 rounded-md bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-shimmer bg-[length:200%_100%]"></div>
+                                                    <div className="h-4 w-full rounded-md bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-shimmer bg-[length:200%_100%] [animation-delay:0.1s]"></div>
+                                                    <div className="h-4 w-2/3 rounded-md bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-shimmer bg-[length:200%_100%] [animation-delay:0.2s]"></div>
                                                 </div>
                                             )
                                         )}
