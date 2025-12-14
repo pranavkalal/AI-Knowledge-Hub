@@ -65,8 +65,9 @@ db-stop:
 # Data Pipeline
 # -------------------------------
 ingest:
-	@echo "📄 Starting Azure/Postgres Ingestion..."
-	PYTHONPATH=. $(PYTHON) app/ingest.py
+	@echo "📄 Starting Azure Read + Postgres Ingestion..."
+	PYTHONPATH=. $(PYTHON) app/ingest.py --config configs/ingestion/azure_read_postgres.yaml
+
 
 # -------------------------------
 # Maintenance

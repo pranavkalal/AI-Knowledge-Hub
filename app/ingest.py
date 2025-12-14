@@ -1,5 +1,15 @@
 # app/ingest.py
+"""
+Production ingestion pipeline for CRDC Knowledge Hub.
+
+Features:
+- Azure Document Intelligence Read parser (production-ready)
+- CSV metadata enrichment from scraped_reports.csv
+- Semantic chunking with page-level tracking
+- PostgreSQL vector storage
+"""
 import argparse
+import csv
 import os
 import yaml
 from pathlib import Path
@@ -30,48 +40,88 @@ def load_skip_ids():
     }
 
 
+def load_csv_metadata(csv_path: str) -> dict:
+    """
+    Load metadata from CSV file and index by filename.
+    
+    Returns:
+        Dict mapping filename -> metadata dict
+    """
+    metadata_map = {}
+    
+    if not os.path.exists(csv_path):
+        print(f"[warn] CSV metadata file not found: {csv_path}")
+        return metadata_map
+    
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            filename = row.get("filename", "").strip()
+            if filename:
+                metadata_map[filename] = {
+                    "title": row.get("title", "").strip(),
+                    "year": row.get("year", "").strip(),
+                    "project_code": row.get("project_code", "").strip(),
+                    "author": row.get("author", "").strip(),
+                    "publisher": row.get("publisher", "").strip(),
+                    "abstract": row.get("abstract", "").strip(),
+                    "category": row.get("category", "").strip(),
+                    "subject": row.get("subject", "").strip(),
+                    "pdf_url": row.get("pdf_url", "").strip(),
+                    "source_page": row.get("source_page", "").strip(),
+                }
+    
+    print(f"[metadata] loaded {len(metadata_map)} records from CSV")
+    return metadata_map
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/ingestion/default.yaml")
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
-    years = cfg.get("years")
-    seed_urls = cfg["seed_urls"]
-    include_patterns = cfg.get("include_patterns", [r"\.pdf$"])
-    exclude_patterns = cfg.get("exclude_patterns", [])
-    timeout = int(cfg.get("timeout_secs", 20))
-    ua = cfg.get("user_agent", "CRDC-Ingest/0.1")
     download_dir = cfg["download_dir"]
     out_jsonl = cfg["output"]["jsonl"]
     out_csv = cfg["output"]["csv"]
-    retry = cfg.get("retry", {})
-    attempts = int(retry.get("attempts", 3))
-    backoff = int(retry.get("backoff_secs", 2))
     
     # Parser config
-    parser_type = cfg.get("parser", "docling").lower()
+    parser_type = cfg.get("parser", "azure_read").lower()
     
     # Storage config
     store_type = cfg.get("storage", {}).get("type", "file").lower()
+    
+    # Load CSV metadata for enrichment
+    metadata_cfg = cfg.get("metadata", {})
+    csv_path = metadata_cfg.get("csv_path", "data/metadata/scraped_reports.csv")
+    csv_metadata = load_csv_metadata(csv_path)
 
     skip_ids = load_skip_ids()
     if skip_ids:
         print(f"[skiplist] loaded {len(skip_ids)} IDs to ignore")
 
-    # Skip scraping, iterate local files
+    # Iterate local PDF files
     pdf_files = list(Path(download_dir).glob("*.pdf"))
     print(f"[ingest] found {len(pdf_files)} local PDFs in {download_dir}")
     
     links = []
     for p in pdf_files:
-        # Create a dummy link object for compatibility
+        filename = p.name
+        # Enrich from CSV metadata if available
+        meta = csv_metadata.get(filename, {})
+        
         links.append(type('obj', (object,), {
-            "url": f"file://{p.absolute()}",
-            "title": p.stem,
-            "year": None,
-            "source_page": None,
-            "local_path": str(p)
+            "url": meta.get("pdf_url") or f"file://{p.absolute()}",
+            "title": meta.get("title") or p.stem,
+            "year": meta.get("year"),
+            "author": meta.get("author"),
+            "abstract": meta.get("abstract"),
+            "category": meta.get("category"),
+            "subject": meta.get("subject"),
+            "project_code": meta.get("project_code"),
+            "source_page": meta.get("source_page"),
+            "local_path": str(p),
+            "filename": filename,
         })())
 
     records = []
@@ -82,24 +132,11 @@ def main():
     pg_store = None
     if store_type == "postgres":
         from app.adapters.vector_postgres import PostgresStoreAdapter
-        # We need an embedder for ingestion? 
-        # Actually, usually we chunk and embed.
-        # Let's assume we just store text chunks for now, or we need to load embedder here too.
-        # For simplicity, let's load the embedder defined in runtime config or just use OpenAI directly if configured.
-        # But wait, `ingest.py` usually just creates JSONL. 
-        # If we want to write to Postgres, we should probably do it here.
-        
-        # Let's load the embedder using the factory helper
         from app.adapters.loader import load_embedder
-        # We might need a separate config for ingestion embedder or reuse runtime config
-        # For now, let's assume we use the same embedder config as runtime if available, 
-        # or just default to OpenAI if we are pushing to Postgres.
         
-        # To keep it simple, let's require an embedder config in ingestion.yaml if using postgres
         embed_cfg = cfg.get("embedder")
         if not embed_cfg:
-             # Fallback to env vars or default
-             embed_cfg = {"provider": "openai", "model": "text-embedding-3-small"}
+            embed_cfg = {"provider": "openai", "model": "text-embedding-3-large"}
         
         embedder = load_embedder(embed_cfg, os.environ)
         pg_store = PostgresStoreAdapter(
@@ -108,8 +145,8 @@ def main():
             embedder=embedder
         )
 
-    # Limit processed documents
-    doc_limit = cfg.get("limit", 15)
+    # Limit processed documents (set high for production)
+    doc_limit = cfg.get("limit", 100)
     
     for i, link in enumerate(links, 1):
         if len(records) >= doc_limit:
@@ -124,7 +161,7 @@ def main():
             if link.url in seen_urls:
                 print(f"[skip] already processed url: {link.url}")
                 continue
-            pdf_path = download_pdf(link.url, download_dir, timeout, ua, attempts, backoff)
+            pdf_path = download_pdf(link.url, download_dir, 20, "CRDC-Ingest/0.2", 3, 2)
             
         if not pdf_path:
             print(f"[skip] not a pdf or failed: {link.url}")
@@ -138,17 +175,14 @@ def main():
             continue
 
         try:
-            if parser_type == "azure":
-                from rag.ingest_lib.parser_azure import AzureParser
-                parser = AzureParser()
-                # parse returns List[Dict] (pages)
+            if parser_type == "azure_read":
+                # New simplified Azure Read parser (no bbox)
+                from rag.ingest_lib.parser_azure_read import AzureReadParser
+                parser = AzureReadParser()
                 pages = parser.parse(pdf_path)
                 
-                # Construct a "parsed" object that fits our record structure
-                # We need to aggregate text for the 'text' field (backward compat)
                 full_text = "\n\n".join([p["text"] for p in pages])
                 
-                # Create a pseudo-object or dict to hold metadata
                 parsed = type('obj', (object,), {
                     "text": full_text,
                     "meta": {
@@ -156,13 +190,36 @@ def main():
                         "source_page": link.source_page,
                         "title": link.title or "",
                         "year": link.year or "",
-                        "page_count": len(pages)
+                        "author": getattr(link, "author", "") or "",
+                        "abstract": getattr(link, "abstract", "") or "",
+                        "category": getattr(link, "category", "") or "",
+                        "subject": getattr(link, "subject", "") or "",
+                        "project_code": getattr(link, "project_code", "") or "",
+                        "page_count": len(pages),
+                        "filename": link.filename,
                     },
-                    "pages": pages # This will be used in the chunking loop
+                    "pages": pages
                 })()
-                # We need to pass 'pages' list through to the record
-                # The 'parsed' object above is a bit hacky to match existing 'parsed.meta' access
-                # Let's adjust the record creation below instead.
+            elif parser_type == "azure":
+                # Legacy Azure Layout parser (with bbox - deprecated)
+                from rag.ingest_lib.parser_azure import AzureParser
+                parser = AzureParser()
+                pages = parser.parse(pdf_path)
+                
+                full_text = "\n\n".join([p["text"] for p in pages])
+                
+                parsed = type('obj', (object,), {
+                    "text": full_text,
+                    "meta": {
+                        "source_url": link.url,
+                        "source_page": link.source_page,
+                        "title": link.title or "",
+                        "year": link.year or "",
+                        "page_count": len(pages),
+                        "filename": link.filename,
+                    },
+                    "pages": pages
+                })()
             else:
                 parsed = parse_pdf(
                     pdf_path,
@@ -176,31 +233,6 @@ def main():
         except Exception as e:
             print(f"[error] failed to parse {pdf_path}: {e}")
             continue
-            
-        # Rename file based on title if available
-        title = parsed.meta.get("title")
-        if title:
-            # Sanitize title
-            safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-            safe_title = safe_title.replace(' ', '_')
-            if safe_title:
-                new_filename = f"{safe_title}.pdf"
-                new_path = Path(download_dir) / new_filename
-                # Handle duplicates
-                counter = 1
-                while new_path.exists():
-                    new_filename = f"{safe_title}_{counter}.pdf"
-                    new_path = Path(download_dir) / new_filename
-                    counter += 1
-                
-                try:
-                    os.rename(pdf_path, new_path)
-                    print(f"[rename] {Path(pdf_path).name} -> {new_filename}")
-                    pdf_path = str(new_path)
-                    rec_id = new_path.stem
-                    parsed.meta["filename"] = new_filename
-                except OSError as e:
-                    print(f"[warn] failed to rename file: {e}")
 
         rec = {
             "id": rec_id,
@@ -208,23 +240,14 @@ def main():
             "year": parsed.meta.get("year", ""),
             "source_url": parsed.meta.get("source_url", ""),
             "source_page": parsed.meta.get("source_page", ""),
-            "filename": parsed.meta["filename"],
+            "filename": parsed.meta.get("filename", link.filename),
             "text": parsed.text,
             "meta": parsed.meta,
-            "parsed": parsed.pages, # Pass the list of pages directly
+            "parsed": getattr(parsed, "pages", None),
         }
         records.append(rec)
         seen_ids.add(rec_id)
         seen_urls.add(link.url)
-        
-        # If Postgres, chunk and store immediately
-        if pg_store:
-            # We need a chunker. Let's use the semantic chunker or a simple one.
-            # For now, let's use a simple recursive character splitter from langchain if available,
-            # or just import the one from `rag/ingest/chunkers` if it exists.
-            # Let's check `rag/ingest/chunkers` content first.
-            # Assuming we have a chunker available.
-            pass # TODO: Implement chunking and pushing to Postgres
 
     print(f"[store] writing {len(records)} records")
     write_jsonl(records, out_jsonl)
@@ -244,26 +267,19 @@ def main():
     )
     
     if pg_store:
-        print("[store] pushing to Postgres with hybrid semantic chunking...")
+        print("[store] pushing to Postgres with semantic chunking...")
         
-        # Import the semantic chunker and bbox mapper
         from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from rag.ingest_lib.chunk_bbox_mapper import (
-            find_matching_bboxes, 
-            calculate_union_bbox,
-            simplify_page_bboxes
-        )
         
-        # Hybrid chunking config: semantic-aware, respects sentence boundaries
-        # Smaller chunks (600 tokens) work better for retrieval than 1000
+        # Chunking config
         chunking_config = cfg.get("chunking", {})
         chunk_size = chunking_config.get("max_tokens", 600)
         chunk_overlap = chunking_config.get("overlap", 100)
         min_chunk_tokens = chunking_config.get("min_chunk_tokens", 50)
         
-        # Use semantic-aware separators
+        # Semantic-aware separators
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size * 4,  # Approximate chars (4 chars/token avg)
+            chunk_size=chunk_size * 4,  # Approx chars (4 chars/token)
             chunk_overlap=chunk_overlap * 4,
             separators=[
                 "\n\n\n",  # Section breaks
@@ -282,7 +298,6 @@ def main():
         
         all_chunks = []
         for rec in records:
-            # rec["parsed"] is a list of page dicts (from AzureParser.parse)
             pages = rec.get("parsed")
             if not pages or not isinstance(pages, list):
                 print(f"[warn] no pages found for {rec['id']}, skipping chunking")
@@ -291,55 +306,47 @@ def main():
             for page in pages:
                 page_num = page["page_number"]
                 page_text = page["text"]
-                page_bboxes = page.get("bboxes", [])
                 
                 # Skip empty pages
                 if not page_text.strip():
                     continue
                 
-                # Split this page's text with semantic awareness
+                # Split this page's text
                 chunks = splitter.split_text(page_text)
                 
-                # Use separate counter to avoid gaps when skipping chunks
                 chunk_counter = 0
                 for text_chunk in chunks:
-                    # Skip tiny chunks (often just headers or noise)
+                    # Skip tiny chunks
                     if len(text_chunk.split()) < min_chunk_tokens // 4:
                         continue
                     
-                    # ID format: doc_id + _p + page + _ + index (no gaps)
                     chunk_id = f"{rec['id']}_p{page_num}_{chunk_counter}"
                     
-                    # Find matching bboxes for this specific chunk
-                    matching_bboxes = find_matching_bboxes(text_chunk, page_bboxes)
-                    
-                    # Calculate union bbox for deep linking highlight
-                    union_bbox = calculate_union_bbox(matching_bboxes)
-                    
-                    # Build metadata
+                    # Build metadata (no bbox - page-level tracking only)
                     meta = {
                         "title": rec["meta"].get("title"),
                         "year": rec["meta"].get("year"),
+                        "author": rec["meta"].get("author"),
+                        "abstract": rec["meta"].get("abstract"),
+                        "category": rec["meta"].get("category"),
+                        "subject": rec["meta"].get("subject"),
+                        "project_code": rec["meta"].get("project_code"),
                         "source_url": rec["meta"].get("source_url"),
                         "filename": rec["meta"].get("filename"),
                         "page": page_num,
                         "page_width": page.get("width"),
                         "page_height": page.get("height"),
-                        # Store only matching bboxes (much smaller than all page bboxes)
-                        "bboxes": matching_bboxes,
-                        # Union bbox for deep linking highlight (single rect covering all matches)
-                        "union_bbox": union_bbox,
                     }
                     
                     all_chunks.append({
                         "id": chunk_id,
                         "doc_id": rec["id"],
                         "chunk_index": chunk_counter,
-                        "page_number": page_num,  # First-class field for DB
+                        "page_number": page_num,
                         "text": text_chunk,
                         "metadata": meta
                     })
-                    chunk_counter += 1  # Only increment after successful add
+                    chunk_counter += 1
         
         print(f"[chunks] generated {len(all_chunks)} chunks from {len(records)} documents")
         
