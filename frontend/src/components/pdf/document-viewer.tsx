@@ -96,18 +96,14 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
             )}
         >
             {/* Toolbar */}
-            <div className="flex items-center justify-between border-b dark:border-slate-700 bg-white dark:bg-slate-800 p-2 px-4 gap-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 whitespace-nowrap">Source Viewer</span>
-                    <span className="rounded bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400 truncate max-w-[150px]" title={docId}>
+            <div className="flex items-center justify-between border-b dark:border-slate-700 bg-white dark:bg-slate-800 p-2 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 whitespace-nowrap hidden sm:inline">Source Viewer</span>
+                    <span className="rounded bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={docId}>
                         {docId}
                     </span>
-                    {numPages && (
-                        <span className="rounded bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
-                            Page {currentPage} of {numPages}
-                        </span>
-                    )}
                 </div>
+
                 <div className="flex items-center gap-1">
                     {/* Thumbnails Toggle */}
                     <Button
@@ -133,19 +129,22 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                     >
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <input
-                        type="number"
-                        value={currentPage}
-                        onChange={(e) => {
-                            const val = parseInt(e.target.value);
-                            if (val >= 1 && (!numPages || val <= numPages)) {
-                                setCurrentPage(val);
-                            }
-                        }}
-                        className="w-12 text-center text-xs border rounded px-1 py-1 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                        min={1}
-                        max={numPages || undefined}
-                    />
+                    <div className="flex items-center mx-1">
+                        <input
+                            type="number"
+                            value={currentPage}
+                            onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                if (val >= 1 && (!numPages || val <= numPages)) {
+                                    setCurrentPage(val);
+                                }
+                            }}
+                            className="w-8 text-center text-sm border-none bg-transparent focus:ring-0 p-0 dark:text-white"
+                            min={1}
+                            max={numPages || undefined}
+                        />
+                        {numPages && <span className="text-xs text-slate-400">/{numPages}</span>}
+                    </div>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -157,8 +156,9 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                         <ChevronRight className="h-4 w-4" />
                     </Button>
 
-                    {/* Zoom Controls */}
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 mx-1" />
+
+                    {/* Zoom Controls */}
                     <Button
                         variant="ghost"
                         size="icon"
@@ -169,7 +169,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                     >
                         <ZoomOut className="h-4 w-4" />
                     </Button>
-                    <span className="text-xs text-slate-600 dark:text-slate-400 px-1 min-w-[3rem] text-center">
+                    <span className="text-xs text-slate-600 dark:text-slate-400 w-10 text-center">
                         {zoom}%
                     </span>
                     <Button
@@ -185,7 +185,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
 
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 mx-1" />
 
-                    {/* Download & Print & Open in New Tab */}
+                    {/* Actions */}
                     <Button
                         variant="ghost"
                         size="icon"
@@ -195,15 +195,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                     >
                         <Download className="h-4 w-4" />
                     </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handlePrint}
-                        title="Print"
-                    >
-                        <Printer className="h-4 w-4" />
-                    </Button>
+
                     <Button
                         variant="ghost"
                         size="icon"
@@ -219,23 +211,11 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                         <ExternalLink className="h-4 w-4" />
                     </Button>
 
-                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 mx-1" />
-
-                    {/* Fullscreen */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleFullscreen}
-                        title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                    >
-                        {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-                    </Button>
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={onClose}
-                        className="h-8 w-8 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600"
+                        className="h-8 w-8 ml-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600"
                         title="Close viewer"
                     >
                         <X className="h-4 w-4" />
