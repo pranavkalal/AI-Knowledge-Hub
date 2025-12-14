@@ -202,8 +202,9 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
                         className="h-8 w-8"
                         onClick={() => {
                             if (pdfUrl) {
-                                window.open(pdfUrl, '_blank');
-                                toast.success("Opened PDF in new tab");
+                                // Append page number for browser PDF viewer
+                                const url = `${pdfUrl}#page=${currentPage}`;
+                                window.open(url, '_blank', 'noopener,noreferrer');
                             }
                         }}
                         title="Open in new tab"
