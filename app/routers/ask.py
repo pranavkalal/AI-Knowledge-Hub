@@ -13,8 +13,6 @@ from functools import lru_cache
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, AliasChoices
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.factory import build_pipeline
 
@@ -22,8 +20,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ask"])
 
-# Rate limiter (uses the app-level limiter)
-limiter = Limiter(key_func=get_remote_address)
+
+def get_limiter(request: Request):
+    """Get the app-level limiter from request state."""
+    return request.app.state.limiter
 
 
 # --- Cached Pipeline ---
@@ -235,8 +235,10 @@ def _run_pipeline(req: AskRequest) -> AskResponse:
 
 # Accept both /ask and /ask/ to avoid 405s from sloppy URLs
 @router.post("/ask", response_model=AskResponse, response_model_exclude_none=True)
-@limiter.limit("10/minute")  # Stricter limit for expensive LLM calls
 async def ask_post(request: Request, req: AskRequest, stream: bool = Query(False)):
+    # Rate limiting via app-level limiter (10 requests/minute for expensive LLM calls)
+    limiter = get_limiter(request)
+    await limiter._check_request_limit(request, None, "10/minute")
     if not stream:
         return _run_pipeline(req)
 
@@ -270,6 +272,8 @@ async def ask_post(request: Request, req: AskRequest, stream: bool = Query(False
 
 
 @router.post("/ask/", response_model=AskResponse, response_model_exclude_none=True)
-@limiter.limit("10/minute")
 async def ask_post_slash(request: Request, req: AskRequest, stream: bool = Query(False)):
+    # Rate limiting via app-level limiter
+    limiter = get_limiter(request)
+    await limiter._check_request_limit(request, None, "10/minute")
     return await ask_post(request, req, stream=stream)

@@ -300,13 +300,15 @@ def main():
                 # Split this page's text with semantic awareness
                 chunks = splitter.split_text(page_text)
                 
-                for idx, text_chunk in enumerate(chunks):
+                # Use separate counter to avoid gaps when skipping chunks
+                chunk_counter = 0
+                for text_chunk in chunks:
                     # Skip tiny chunks (often just headers or noise)
                     if len(text_chunk.split()) < min_chunk_tokens // 4:
                         continue
                     
-                    # ID format: doc_id + _p + page + _ + index
-                    chunk_id = f"{rec['id']}_p{page_num}_{idx}"
+                    # ID format: doc_id + _p + page + _ + index (no gaps)
+                    chunk_id = f"{rec['id']}_p{page_num}_{chunk_counter}"
                     
                     # Find matching bboxes for this specific chunk
                     matching_bboxes = find_matching_bboxes(text_chunk, page_bboxes)
@@ -332,11 +334,12 @@ def main():
                     all_chunks.append({
                         "id": chunk_id,
                         "doc_id": rec["id"],
-                        "chunk_index": idx,
+                        "chunk_index": chunk_counter,
                         "page_number": page_num,  # First-class field for DB
                         "text": text_chunk,
                         "metadata": meta
                     })
+                    chunk_counter += 1  # Only increment after successful add
         
         print(f"[chunks] generated {len(all_chunks)} chunks from {len(records)} documents")
         
