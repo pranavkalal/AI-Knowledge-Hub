@@ -62,14 +62,44 @@ function SidebarNav({
             </div>
 
             {/* Main Nav */}
-            <nav className="flex-1 space-y-1 px-3 overflow-hidden">
-                {/* Recent Chats Section */}
+            <nav className="flex-1 flex flex-col space-y-1 px-3 overflow-hidden">
+                {/* Navigation Items (Library, About Us) */}
+                {navItems.map((item) => (
+                    <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onLinkClick}
+                        className={cn(
+                            "flex items-center rounded-full p-3 text-sm font-medium transition-colors hover:bg-slate-200 dark:hover:bg-slate-700",
+                            pathname === item.href ? "bg-purple-100 dark:bg-purple-900/30 text-purple-900 dark:text-purple-100" : "text-slate-600 dark:text-slate-300",
+                            isCollapsed ? "justify-center" : "space-x-3 px-4"
+                        )}
+                    >
+                        <item.icon className="h-5 w-5" />
+                        {!isCollapsed && <span>{item.label}</span>}
+                    </Link>
+                ))}
+
+                {isCollapsed && (
+                    <Link
+                        href="/chat"
+                        onClick={onLinkClick}
+                        className={cn(
+                            "flex items-center rounded-full p-3 text-sm font-medium transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 justify-center",
+                            pathname.startsWith("/chat") ? "bg-purple-100 dark:bg-purple-900/30 text-purple-900 dark:text-purple-100" : "text-slate-600 dark:text-slate-300"
+                        )}
+                    >
+                        <MessageSquare className="h-5 w-5" />
+                    </Link>
+                )}
+
+                {/* Recent Chats Section - below nav items, scrollable */}
                 {!isCollapsed && recentChats.length > 0 && (
-                    <div className="mb-4">
+                    <div className="mt-4 flex-1 min-h-0">
                         <p className="px-4 text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
                             Recent Chats
                         </p>
-                        <ScrollArea className="h-[180px]">
+                        <ScrollArea className="h-full max-h-[200px]">
                             {recentChats.map((chat) => (
                                 <div
                                     key={chat.id}
@@ -97,35 +127,6 @@ function SidebarNav({
                         </ScrollArea>
                     </div>
                 )}
-
-                {isCollapsed && (
-                    <Link
-                        href="/chat"
-                        onClick={onLinkClick}
-                        className={cn(
-                            "flex items-center rounded-full p-3 text-sm font-medium transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 justify-center",
-                            pathname.startsWith("/chat") ? "bg-purple-100 dark:bg-purple-900/30 text-purple-900 dark:text-purple-100" : "text-slate-600 dark:text-slate-300"
-                        )}
-                    >
-                        <MessageSquare className="h-5 w-5" />
-                    </Link>
-                )}
-
-                {navItems.map((item) => (
-                    <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={onLinkClick}
-                        className={cn(
-                            "flex items-center rounded-full p-3 text-sm font-medium transition-colors hover:bg-slate-200 dark:hover:bg-slate-700",
-                            pathname === item.href ? "bg-purple-100 dark:bg-purple-900/30 text-purple-900 dark:text-purple-100" : "text-slate-600 dark:text-slate-300",
-                            isCollapsed ? "justify-center" : "space-x-3 px-4"
-                        )}
-                    >
-                        <item.icon className="h-5 w-5" />
-                        {!isCollapsed && <span>{item.label}</span>}
-                    </Link>
-                ))}
             </nav>
 
             {/* Bottom Nav */}
@@ -212,20 +213,6 @@ function DesktopSidebar() {
                 >
                     <Menu className="h-6 w-6 text-slate-600 dark:text-slate-300" />
                 </Button>
-                <AnimatePresence>
-                    {!isCollapsed && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="ml-4"
-                        >
-                            <Link href="/" className="flex items-center gap-2">
-                                <img src="/logo.png" alt="CRDC" className="h-8 dark:invert" />
-                            </Link>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
             </div>
 
             <SidebarNav isCollapsed={isCollapsed} />

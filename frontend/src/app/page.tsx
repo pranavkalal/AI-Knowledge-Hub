@@ -115,6 +115,11 @@ export default function Home() {
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col relative bg-background px-4">
+      {/* Top Logo Area */}
+      <div className="absolute top-4 left-4">
+        <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
+      </div>
+
       <div className="flex flex-1 flex-col items-center justify-center">
         <motion.div
           variants={container}

@@ -267,6 +267,13 @@ export function ChatInterface({ initialQuery, initialPersona = "grower", onCitat
         <div className="flex h-full flex-col bg-background relative">
             <ScrollArea className="flex-1 px-4 sm:px-0">
                 <div className="flex flex-col space-y-8 pb-32 pt-8 max-w-3xl mx-auto">
+                    {/* Logo Area */}
+                    <div className="flex justify-start mb-4">
+                        <Link href="/" className="block transition-opacity hover:opacity-80">
+                            <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
+                        </Link>
+                    </div>
+
                     <AnimatePresence initial={false}>
                         {messages.map((msg) => (
                             <motion.div
