@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, Maximize2, Minimize2, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, Printer, LayoutGrid } from "lucide-react";
+import { X, Maximize2, Minimize2, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, Printer, LayoutGrid, ExternalLink } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
@@ -88,7 +88,7 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
     const thumbnailPages = numPages ? Array.from({ length: Math.min(numPages, 20) }, (_, i) => i + 1) : [];
 
     return (
-        <div 
+        <div
             data-pdf-viewer
             className={cn(
                 "flex h-full flex-col bg-slate-50 dark:bg-slate-900 border-l dark:border-slate-700",
@@ -185,32 +185,46 @@ export function DocumentViewer({ docId, page = 1, bbox, onClose }: DocumentViewe
 
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 mx-1" />
 
-                    {/* Download & Print */}
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
+                    {/* Download & Print & Open in New Tab */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-8 w-8"
                         onClick={handleDownload}
                         title="Download PDF"
                     >
                         <Download className="h-4 w-4" />
                     </Button>
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-8 w-8"
                         onClick={handlePrint}
                         title="Print"
                     >
                         <Printer className="h-4 w-4" />
                     </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                            if (pdfUrl) {
+                                window.open(pdfUrl, '_blank');
+                                toast.success("Opened PDF in new tab");
+                            }
+                        }}
+                        title="Open in new tab"
+                    >
+                        <ExternalLink className="h-4 w-4" />
+                    </Button>
 
                     <div className="h-4 w-px bg-slate-200 dark:bg-slate-600 mx-1" />
 
                     {/* Fullscreen */}
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-8 w-8"
                         onClick={handleFullscreen}
                         title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
