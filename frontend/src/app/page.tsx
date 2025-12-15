@@ -14,69 +14,69 @@ import { PersonaType } from "@/lib/api";
 // Persona-specific configurations
 const personaConfig = {
   grower: {
-    placeholder: "How do I manage pests on my farm?",
+    placeholder: "How can I improve my cotton yield?",
     cards: [
       {
         icon: Bug,
-        text: "What are the best ways to control silverleaf whitefly?",
+        text: "What are the best practices for managing Fusarium wilt?",
         color: "text-purple-600",
         bg: "bg-purple-50",
       },
       {
         icon: Droplets,
-        text: "How can I improve water efficiency in my irrigation?",
+        text: "How can I improve water productivity on my farm?",
         color: "text-blue-600",
         bg: "bg-blue-50",
       },
       {
         icon: Tractor,
-        text: "What soil management practices improve cotton yield?",
+        text: "What cover crops work best before cotton?",
         color: "text-amber-600",
         bg: "bg-amber-50",
       },
     ],
   },
   researcher: {
-    placeholder: "What does the latest research say about...?",
+    placeholder: "What does the research say about...?",
     cards: [
       {
         icon: Microscope,
-        text: "How are DNA diagnostics used to monitor disease suppressive soils?",
+        text: "What are the social sustainability indicators for cotton?",
         color: "text-purple-600",
         bg: "bg-purple-50",
       },
       {
         icon: Beaker,
-        text: "What research exists on silverleaf whitefly resistance monitoring?",
+        text: "How is climate affecting cotton growing regions?",
         color: "text-blue-600",
         bg: "bg-blue-50",
       },
       {
         icon: FlaskConical,
-        text: "What are the findings on nitrogen cycling from farm to catchment?",
+        text: "What biosecurity risks affect Australian cotton?",
         color: "text-amber-600",
         bg: "bg-amber-50",
       },
     ],
   },
   extension_officer: {
-    placeholder: "What guidance can I share with growers about...?",
+    placeholder: "What guidance can I share about...?",
     cards: [
       {
         icon: ClipboardList,
-        text: "What are the key IPM recommendations for this season?",
+        text: "What are the latest disease management recommendations?",
         color: "text-purple-600",
         bg: "bg-purple-50",
       },
       {
         icon: BookOpen,
-        text: "How should growers approach nitrogen management?",
+        text: "How should growers manage herbicide resistance?",
         color: "text-blue-600",
         bg: "bg-blue-50",
       },
       {
         icon: FileText,
-        text: "What are the best practices for weed management in cotton?",
+        text: "What integrated weed management strategies work best?",
         color: "text-amber-600",
         bg: "bg-amber-50",
       },
