@@ -18,6 +18,7 @@ The **CRDC AI Knowledge Hub** is an intelligent search and question-answering sy
 Built with modern, scalable technologies:
 
 - **AI & LLM**: OpenAI GPT-4o, Text-Embedding-3
+- **RAG Orchestration**: LangGraph (Corrective RAG pattern)
 - **Backend**: Python, FastAPI, LangChain
 - **Frontend**: Next.js, React, Tailwind CSS
 - **Database**: PostgreSQL (Vector Store & Metadata)

@@ -9,12 +9,15 @@
 | **Embeddings** | OpenAI `text-embedding-3-large` | 3072-dim vectors for retrieval |
 | **LLM** | OpenAI `gpt-4o` | Answer generation |
 | **Reranker** | OpenAI `text-embedding-3-large` | Cross-encoder reranking |
-| **Backend** | FastAPI + LangChain | API and RAG orchestration |
+| **Orchestration** | LangGraph | Agentic RAG pipeline with Corrective RAG pattern |
+| **Backend** | FastAPI + LangChain | API and adapter layer |
 | **Frontend** | Next.js + React + Tailwind | Chat UI with PDF viewer |
 
 ---
 
 ## Pipeline Overview
+
+The system uses **LangGraph** to implement a **Corrective RAG** pattern with self-healing query rewriting and hallucination detection.
 
 ```mermaid
 flowchart TB
@@ -25,14 +28,17 @@ flowchart TB
         Embed --> PG[(PostgreSQL)]
     end
     
-    subgraph Retrieval
-        Query[User Query] --> QEmbed[Embed Query]
-        QEmbed --> Hybrid[Hybrid Search]
-        PG --> Hybrid
-        Hybrid --> Rerank[Reranker]
-        Rerank --> LLM[GPT-4o]
-        LLM --> Answer[Streaming Response]
+    subgraph "LangGraph RAG Pipeline"
+        Query[User Query] --> Retrieve[Retrieve]
+        Retrieve --> Grade[Grade Relevance]
+        Grade -->|Poor Results| Rewrite[Rewrite Query]
+        Rewrite -->|Max 2 retries| Retrieve
+        Grade -->|Good Results| Rerank[Rerank]
+        Rerank --> Generate[Generate Answer]
+        Generate --> Evaluate[Self-Evaluate]
+        Evaluate --> Answer[Streaming Response]
     end
+    PG --> Retrieve
 ```
 
 ---
@@ -60,7 +66,16 @@ AI-Knowledge-Hub/
 │       ├── prompting.py     # Persona prompts
 │       └── formatting.py    # Citation formatting
 ├── rag/                      # RAG Core
-│   ├── chain.py             # LangChain orchestration
+│   ├── graph.py             # LangGraph RAG pipeline
+│   ├── nodes/               # LangGraph node functions
+│   │   ├── state.py         # RAGState TypedDict
+│   │   ├── retrieve.py      # Document retrieval
+│   │   ├── grade.py         # Relevance grading
+│   │   ├── rewrite.py       # Query rewriting
+│   │   ├── rerank.py        # Result reranking
+│   │   ├── generate.py      # Answer generation
+│   │   └── evaluate.py      # Hallucination check
+│   ├── chain.py             # Legacy LCEL chain (fallback)
 │   ├── ingest_lib/          # Ingestion utilities
 │   │   ├── parser_azure.py  # Azure DI parser
 │   │   ├── chunk_bbox_mapper.py # Bbox mapping
@@ -117,6 +132,7 @@ AZURE_DOCUMENT_INTELLIGENCE_KEY=...
 | Pipeline Factory | `app/factory.py` | Builds QA pipeline from YAML |
 | Q&A Endpoint | `app/routers/ask.py` | Handles `/api/ask` requests |
 | Vector Store | `app/adapters/vector_postgres.py` | Hybrid search with pgvector |
-| LangChain Chain | `rag/chain.py` | LCEL graph for retrieval + generation |
+| **LangGraph Pipeline** | `rag/graph.py` | Corrective RAG with grading, rewriting, evaluation |
+| RAG State | `rag/nodes/state.py` | Typed state flowing through pipeline |
 | Azure Parser | `rag/ingest_lib/parser_azure.py` | PDF parsing with bbox extraction |
 | Prompts | `app/services/prompting.py` | Persona-aware system prompts |

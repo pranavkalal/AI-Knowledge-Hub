@@ -2,19 +2,49 @@
 
 ## Overview
 
-The retrieval pipeline handles user queries through hybrid search, reranking, and LLM generation.
+The retrieval pipeline uses **LangGraph** to implement a **Corrective RAG** pattern. This enables self-healing query rewriting when results are poor and hallucination detection before returning answers.
 
 ```mermaid
 flowchart LR
-    Q[User Query] --> Embed[Embed Query]
-    Embed --> Vector[Vector Search]
-    Embed --> Keyword[Keyword Search]
-    Vector --> Hybrid[Hybrid Merge]
-    Keyword --> Hybrid
-    Hybrid --> Rerank[Reranker]
-    Rerank --> Context[Build Context]
-    Context --> LLM[GPT-4o]
-    LLM --> Stream[Streaming Response]
+    Q[User Query] --> Retrieve
+    Retrieve --> Grade[Grade Relevance]
+    Grade -->|< 50% relevant| Rewrite
+    Rewrite -->|max 2 retries| Retrieve
+    Grade -->|≥ 50% relevant| Rerank
+    Rerank --> Generate
+    Generate --> Evaluate[Self-Check]
+    Evaluate --> Stream[Streaming Response]
+```
+
+---
+
+## LangGraph Nodes
+
+The pipeline is composed of modular nodes in `rag/nodes/`:
+
+| Node | File | Purpose |
+|------|------|---------|
+| **Retrieve** | `retrieve.py` | Fetch documents via hybrid search |
+| **Grade** | `grade.py` | LLM grades each document for relevance (0-1) |
+| **Rewrite** | `rewrite.py` | LLM rewrites query if < 50% docs relevant |
+| **Rerank** | `rerank.py` | Cross-encoder reranking with OpenAI embeddings |
+| **Generate** | `generate.py` | GPT-4o answer generation with citations |
+| **Evaluate** | `evaluate.py` | Self-check for hallucinations |
+
+### State Management
+
+All state flows through `RAGState` (TypedDict in `rag/nodes/state.py`):
+
+```python
+class RAGState(TypedDict):
+    question: str
+    documents: List[Document]
+    relevance_grades: List[float]
+    rewrite_count: int
+    generation: Optional[str]
+    citations: List[Dict]
+    hallucination_detected: bool
+    timings: List[Dict]
 ```
 
 ---
@@ -41,20 +71,7 @@ Cross-encoder reranking using `text-embedding-3-large`:
 - Computes cosine similarity
 - Returns top-k reranked results
 
-### 3. LangChain Orchestration
-**File**: `rag/chain.py`
-
-LCEL (LangChain Expression Language) chain:
-```
-Query → Retriever → Reranker → Prompt Builder → LLM → Output Parser
-```
-
-Features:
-- Streaming support
-- Timing instrumentation
-- Persona-aware prompts
-
-### 4. Persona System
+### 3. Persona System
 **File**: `app/services/prompting.py`
 
 Three personas with different behaviors:
