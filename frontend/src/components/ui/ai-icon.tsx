@@ -244,3 +244,4 @@ export function GeminiIcon({ isStreaming = false, size = "md", className }: AIIc
     );
 }
 
+
