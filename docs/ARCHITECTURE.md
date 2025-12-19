@@ -1,138 +1,55 @@
-# AI Knowledge Hub - Architecture
+# System Architecture Deep Dive
 
-## Tech Stack
+## Introduction
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Parsing** | Azure Document Intelligence | Extract Markdown + bounding boxes from PDFs |
-| **Storage** | PostgreSQL + pgvector | Vector store with hybrid search |
-| **Embeddings** | OpenAI `text-embedding-3-large` | 3072-dim vectors for retrieval |
-| **LLM** | OpenAI `gpt-4o` | Answer generation |
-| **Reranker** | OpenAI `text-embedding-3-large` | Cross-encoder reranking |
-| **Orchestration** | LangGraph | Agentic RAG pipeline with Corrective RAG pattern |
-| **Backend** | FastAPI + LangChain | API and adapter layer |
-| **Frontend** | Next.js + React + Tailwind | Chat UI with PDF viewer |
+This document outlines the architectural decisions behind the CRDC AI Knowledge Hub. It serves as a technical reference for understanding how we solved the challenge of querying 40+ years of unstructured PDF research reports.
 
----
+## 1. The Challenge (Unstructured Data)
 
-## Pipeline Overview
+Agricultural research reports are complex:
+- **Multi-column layouts**: Hard for standard parsers to read correctly.
+- **Embedded Tables**: Critical data is often trapped in grids that look like text soup to simple OCR.
+- **Domain Specificity**: "Bt cotton" and "Verticillium wilt" need semantic understanding, not just keyword matching.
 
-The system uses **LangGraph** to implement a **Corrective RAG** pattern with self-healing query rewriting and hallucination detection.
+## 2. The Solution: Corrective RAG (CRAG) with LangGraph
 
-```mermaid
-flowchart TB
-    subgraph Ingestion
-        PDF[PDF Files] --> Azure[Azure DI]
-        Azure --> Chunk[Semantic Chunker]
-        Chunk --> Embed[OpenAI Embed]
-        Embed --> PG[(PostgreSQL)]
-    end
-    
-    subgraph "LangGraph RAG Pipeline"
-        Query[User Query] --> Retrieve[Retrieve]
-        Retrieve --> Grade[Grade Relevance]
-        Grade -->|Poor Results| Rewrite[Rewrite Query]
-        Rewrite -->|Max 2 retries| Retrieve
-        Grade -->|Good Results| Rerank[Rerank]
-        Rerank --> Generate[Generate Answer]
-        Generate --> Evaluate[Self-Evaluate]
-        Evaluate --> Answer[Streaming Response]
-    end
-    PG --> Retrieve
-```
+We moved beyond simple "Retrieve-and-Generate" to an **Agentic** approach.
 
----
+### 2.1 The Graph Flow
 
-## Directory Structure
+The system operates as a state machine (built with LangGraph):
 
-```
-AI-Knowledge-Hub/
-├── app/                      # FastAPI Backend
-│   ├── main.py              # App entrypoint
-│   ├── factory.py           # Pipeline builder from config
-│   ├── ingest.py            # Ingestion CLI
-│   ├── routers/             # API endpoints
-│   │   ├── ask.py           # POST /api/ask
-│   │   ├── library.py       # GET /api/library
-│   │   ├── pdf.py           # PDF serving
-│   │   └── health.py        # Health check
-│   ├── adapters/            # Port implementations
-│   │   ├── embed_openai.py  # OpenAI embedder
-│   │   ├── vector_postgres.py # pgvector store
-│   │   ├── llm_openai.py    # OpenAI LLM
-│   │   └── rerank_openai.py # OpenAI reranker
-│   └── services/            # Business logic
-│       ├── qa.py            # Native QA pipeline
-│       ├── prompting.py     # Persona prompts
-│       └── formatting.py    # Citation formatting
-├── rag/                      # RAG Core
-│   ├── graph.py             # LangGraph RAG pipeline
-│   ├── nodes/               # LangGraph node functions
-│   │   ├── state.py         # RAGState TypedDict
-│   │   ├── retrieve.py      # Document retrieval
-│   │   ├── grade.py         # Relevance grading
-│   │   ├── rewrite.py       # Query rewriting
-│   │   ├── rerank.py        # Result reranking
-│   │   ├── generate.py      # Answer generation
-│   │   └── evaluate.py      # Hallucination check
-│   ├── chain.py             # Legacy LCEL chain (fallback)
-│   ├── ingest_lib/          # Ingestion utilities
-│   │   ├── parser_azure.py  # Azure DI parser
-│   │   ├── chunk_bbox_mapper.py # Bbox mapping
-│   │   └── discover.py      # PDF discovery
-│   └── retrieval/           # Retrieval utilities
-│       ├── utils.py         # Hit preparation
-│       └── pdf_links.py     # PDF resolution
-├── frontend/                 # Next.js Frontend
-│   └── src/
-│       ├── app/             # Pages (chat, library)
-│       └── components/      # UI components
-├── configs/                  # YAML configs
-│   ├── runtime/openai.yaml  # Runtime config
-│   └── ingestion/           # Ingestion config
-├── data/                     # Data storage
-│   └── raw/                 # Source PDFs
-└── docker-compose.yml        # PostgreSQL service
-```
+1.  **Retrieval**: We fetch documents using a hybrid approach (Dense Vectors + BM25 Keywords).
+2.  **Grading (Self-Correction)**: A lightweight LLM "Grader" evaluates each retrieved document.
+    - *Is this relevant to the question?*
+    - If **Yes**: Keep it.
+    - If **No**: Discard it.
+    - If **Too few docs**: Trigger "Query Transformation" to rewrite the search and try again.
+3.  **Generation**: The final context is passed to GPT-4o.
+4.  **Hallucination Check**: The generated answer is cross-checked against the documents. If it cites facts not present, we regenerate.
+
+### 2.2 The Ingestion Pipeline
+
+Data quality is paramount. Our pipeline uses **Azure Document Intelligence** (Layout Model) to:
+- Detect table boundaries.
+- Extract headers and footers (avoiding ingestion of page numbers).
+- Chunk text by *semantic sections* rather than arbitrary character counts.
+
+## 3. Infrastructure & Scalability
+
+- **Containerization**: Docker-based build for consistency.
+- **Serverless**: Deployed on Google Cloud Run for auto-scaling to zero to save costs.
+- **Vector Store**: PostgreSQL with `pgvector` was chosen over Pinecone/Weaviate for simplified stack management (keeping relational metadata and vectors in one place).
+
+## 4. Why This Stack?
+
+| Component | Choice | Reasoning |
+| :--- | :--- | :--- |
+| **LLM** | OpenAI GPT-4o | Best-in-class reasoning for complex scientific queries. |
+| **Framework** | FastAPI | High-performance async support for concurrent RAG requests. |
+| **Orchestration** | LangChain/LangGraph | Provides the control flow primitives needed for cyclic graphs. |
+| **Frontend** | Next.js | Server-Side Rendering (SSR) for fast initial load and SEO. |
 
 ---
 
-## Configuration
-
-### Runtime Config (`configs/runtime/openai.yaml`)
-Controls model selection, retrieval parameters, and LangChain settings.
-
-```yaml
-embedder:
-  model: text-embedding-3-large
-llm:
-  model: gpt-4o
-  temperature: 0.2
-retrieval:
-  k: 6
-  mode: dense
-  rerank: true
-```
-
-### Environment Variables (`.env`)
-```bash
-OPENAI_API_KEY=sk-...
-POSTGRES_CONNECTION_STRING=postgresql+psycopg2://...
-AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://...
-AZURE_DOCUMENT_INTELLIGENCE_KEY=...
-```
-
----
-
-## Key Components
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| API Entry | `app/main.py` | FastAPI app with routers |
-| Pipeline Factory | `app/factory.py` | Builds QA pipeline from YAML |
-| Q&A Endpoint | `app/routers/ask.py` | Handles `/api/ask` requests |
-| Vector Store | `app/adapters/vector_postgres.py` | Hybrid search with pgvector |
-| **LangGraph Pipeline** | `rag/graph.py` | Corrective RAG with grading, rewriting, evaluation |
-| RAG State | `rag/nodes/state.py` | Typed state flowing through pipeline |
-| Azure Parser | `rag/ingest_lib/parser_azure.py` | PDF parsing with bbox extraction |
-| Prompts | `app/services/prompting.py` | Persona-aware system prompts |
+*This architecture represents a modern, production-grade approach to Enterprise Search.*

@@ -1,80 +1,110 @@
-# CRDC AI Knowledge Hub
-*Unlocking 40+ years of Australian Cotton Research with AI.*
+# Enterprise RAG Blueprint
 
-## 🚀 Overview
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Architecture: Clean](https://img.shields.io/badge/Architecture-Clean-green) ![Stack: Modern](https://img.shields.io/badge/Stack-FastAPI%20%7C%20LangChain%20%7C%20Next.js-blue)
 
-The **CRDC AI Knowledge Hub** is an intelligent search and question-answering system designed to make decades of agricultural research instantly accessible. By leveraging advanced **Retrieval-Augmented Generation (RAG)**, it transforms static PDF reports into a dynamic knowledge base, allowing researchers, agronomists, and stakeholders to ask questions and get evidence-based answers in seconds.
+**A Modular Reference Architecture for Production-Grade RAG Systems.**
 
-## ✨ Key Features
+This repository serves as an **educational blueprint** for developers looking to build scalable Retrieval-Augmented Generation (RAG) applications. It provides a structured starting point, demonstrating best practices in API design, service modularity, and hybrid search integration.
 
-- **🤖 Intelligent Q&A**: Ask natural language questions like *"What are the best irrigation practices for cotton?"* and get comprehensive answers.
-- **📄 Evidence-Based**: Every answer is backed by citations from official CRDC research papers.
-- **🔍 Deep Linking**: Click a citation to jump directly to the exact paragraph in the original PDF source.
-- **🧠 Advanced Understanding**: Uses state-of-the-art AI to understand context, tables, and technical terminology.
-- **⚡ Hybrid Search**: Combines semantic understanding with keyword precision for accurate results.
-
-## 🛠️ Technology Stack
-
-Built with modern, scalable technologies:
-
-- **AI & LLM**: OpenAI GPT-4o, Text-Embedding-3
-- **RAG Orchestration**: LangGraph (Corrective RAG pattern)
-- **Backend**: Python, FastAPI, LangChain
-- **Frontend**: Next.js, React, Tailwind CSS
-- **Database**: PostgreSQL (Vector Store & Metadata)
-- **PDF Processing**: Azure Document Intelligence
-
-## 📸 How It Works
-
-1.  **Ingestion**: Research PDFs are processed to extract text, tables, and layout using Azure Document Intelligence.
-2.  **Indexing**: Content is semantically analyzed, chunked, and stored in PostgreSQL with vector embeddings.
-3.  **Retrieval**: User questions are matched with the most relevant research using hybrid search (Vector + Keyword).
-4.  **Generation**: AI synthesizes an answer using *only* the retrieved facts, ensuring accuracy.
+> **Note**: This repo contains the *skeletal structure* and *architectural patterns* of a deployed enterprise system. The core business logic has been abstracted to serve as a clean template for your own implementation.
 
 ---
 
-## 👨‍💻 Developer Guide
+## 🌟 Why Use This Blueprint?
 
-### Quick Start
+Building a RAG system that scales beyond a Jupyter notebook is challenging. This project addresses the common engineering hurdles:
 
-**1. Clone & Install**
-```bash
-git clone https://github.com/your-org/AI-Knowledge-Hub.git
-cd AI-Knowledge-Hub
+### 1. Hybrid Search Architecture
 
-# Install dependencies (Backend & Frontend)
-make install
+Most tutorials only cover vector search. This blueprint demonstrates a **Hybrid Retrieval** strategy:
+
+- **Dense Retrieval**: Uses vector embeddings (OpenAI/HuggingFace) to capture semantic meaning.
+- **Sparse Retrieval**: Uses keyword matching (BM25) to capture exact terms and acronyms.
+- **Reranking**: Shows where to plug in a Cross-Encoder to refine results before sending them to the LLM.
+
+### 2. Extreme Modularity
+
+The codebase is decoupled to allow valid independent scaling:
+
+- **`rag/`**: The core intelligence engine. Swappable.
+- **`app/`**: The API layer. Unaware of the underlying model details.
+- **`frontend/`**: A modern Next.js UI that consumes the API via streaming.
+
+### 3. Scalable Infrastructure
+
+Designed for the cloud:
+
+- **Async everywhere**: Python `asyncio` for high-concurrency API handling.
+- **Dockerized**: Ready for container orchestration (K8s/Cloud Run).
+- **Stateless**: No server-side session state, making it infinitely horizontally scalable.
+
+---
+
+## 🏗 Architecture Overview
+
+The system follows a **Graph-based** orchestration pattern (using LangGraph concepts).
+
+```mermaid
+graph TD
+    Query[User Query] --> Planner[Orchestrator]
+  
+    subgraph "Retrieval Module"
+        Planner --> Vector[Vector Store]
+        Planner --> Keyword[Keyword Index]
+        Vector --> Fusion[Rank Fusion]
+        Keyword --> Fusion
+        Fusion --> Rerank[Cross-Encoder]
+    end
+  
+    subgraph "Generation Module"
+        Rerank --> Grader[Relevance Grader]
+        Grader -->|Relevant| Context[Context Window]
+        Grader -->|Irrelevant| Rewrite[Query Rewrite]
+        Rewrite --> Planner
+        Context --> LLM[Generation Models]
+    end
+  
+    LLM --> Response
 ```
 
-**2. Configure Environment**
+## 🛠 Tech Stack
+
+Use this stack to build modern AI apps:
+
+- **Backend**: Python 3.11+, FastAPI
+- **Orchestration**: LangChain components
+- **Database**: PostgreSQL (`pgvector` for embeddings + JSONB for metadata)
+- **Frontend**: Next.js 14, Tailwind CSS, TypeScript
+- **Deployment**: Docker, Makefiles for automation
+
+## 🚀 Getting Started
+
+To use this blueprint for your own project:
+
+### 1. Clone & Explore
+
 ```bash
-cp .env.example .env
+git clone https://github.com/your-username/rag-blueprint.git
+cd rag-blueprint
 ```
-*Edit `.env` to add your `OPENAI_API_KEY` and `POSTGRES_CONNECTION_STRING`.*
 
-**3. Run the App**
-```bash
-make dev
-```
-*This launches both the API (http://localhost:8000) and Frontend (http://localhost:3000).*
+### 2. Understand the Structure
 
-### Common Commands
+- **`app/routers/ask.py`**: Look here to see how to design a clean REST API for RAG, including streaming response handling.
+- **`rag/chain.py`**: This file contains the stubbed logic for the retrieval graph. Fill this in with your own logic!
+- **`rag/retrievers/`**: Implement your specific database connectors here.
 
-| Command | Description |
-| :--- | :--- |
-| `make dev` | Run full stack (API + UI) |
-| `make ingest` | Run PDF ingestion pipeline |
-| `make test` | Run backend tests |
-| `make fmt` | Format code |
+### 3. Extend
 
-### Repository Structure
+The structure is pre-configured for:
 
-- **`app/`**: FastAPI backend application
-- **`frontend/`**: Next.js user interface
-- **`rag/`**: Core RAG logic (Ingestion, Retrieval, Chains)
-- **`scripts/`**: Utility scripts for data processing
-- **`data/`**: Storage for raw PDFs and logs
+- Adding new document loaders in `rag/ingest`.
+- Swapping LLM providers (OpenAI, Anthropic, Llama) in `configs/`.
 
-## 📄 License
+---
 
-MIT License - see [LICENSE](LICENSE)
+## 📚 Learn More
+
+If you are studying RAG architectures, check out the [Architecture Documentation](docs/ARCHITECTURE.md) included in this repo for a deep dive into the theory behind **Corrective RAG** and **Self-RAG** patterns.
+
+*Start building better AI systems today.*
