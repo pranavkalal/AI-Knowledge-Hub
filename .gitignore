@@ -25,14 +25,14 @@ dist/
 htmlcov/
 
 # ---------- Environments & secrets ----------
-# .venv*/
-# venv/
-# .env
-# *.env
-# .env.*
+.venv*/
+venv/
+.env
+*.env
+.env.*
+!.env.example
 .envrc
 .python-version
-!.env.example
 
 # ---------- IDE ----------
 .vscode/
@@ -65,5 +65,3 @@ store/*.idx
 # ---------- Misc ----------
 structure.txt
 .gitattributes
-
-.env

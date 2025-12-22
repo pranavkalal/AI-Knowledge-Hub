@@ -1,0 +1,40 @@
+# configs/ingestion/azure_read_postgres.yaml
+# Production ingestion config using Azure Read + PostgreSQL
+# Cost: ~$1.50 per 1,000 pages (vs layout model which was same cost but more complex)
+
+seed_urls: []  # Not used - we process local PDFs
+
+include_patterns:
+  - '\.pdf$'
+
+# Azure Read parser - production-ready, good table detection
+parser: azure_read
+
+# CSV metadata enrichment
+metadata:
+  csv_path: "data/metadata/scraped_reports.csv"
+  match_by: "filename"
+
+storage:
+  type: postgres
+  table_name: chunks
+
+embedder:
+  provider: openai
+  model: text-embedding-3-large  # Production model (3072 dims)
+
+# Semantic chunking config (page-level, no bbox)
+chunking:
+  strategy: semantic_per_page
+  max_tokens: 600
+  overlap: 100
+  min_chunk_tokens: 50
+
+output:
+  jsonl: "data/staging/azure_read_chunks.jsonl"
+  csv: "data/staging/azure_read_index.csv"
+
+download_dir: "data/raw"
+
+# Process all 63 PDFs in raw folder
+limit: 100

@@ -5,7 +5,7 @@
 
 PYTHON=/Users/viking/.venv311/bin/python
 
-.PHONY: help install dev api ui ingest reindex clean test fmt
+.PHONY: help install dev api ui ingest clean test fmt
 
 # Default target
 help:
@@ -14,8 +14,9 @@ help:
 	@echo "  make dev        - Run both Backend and Frontend in parallel"
 	@echo "  make api        - Run Backend API only (port 8000)"
 	@echo "  make ui         - Run Frontend UI only (port 3000)"
-	@echo "  make ingest     - Run robust batched PDF ingestion"
-	@echo "  make reindex    - Rebuild FAISS index from existing chunks"
+	@echo "  make db         - Start PostgreSQL only (lightweight)"
+	@echo "  make db-stop    - Stop PostgreSQL"
+	@echo "  make ingest     - Run PDF ingestion (Azure + Postgres)"
 	@echo "  make clean      - Clean up temporary files and caches"
 	@echo "  make test       - Run backend tests"
 	@echo "  make fmt        - Format code (ruff)"
@@ -49,16 +50,24 @@ ui:
 	cd frontend && npm run dev
 
 # -------------------------------
+# Database (lightweight - Postgres only)
+# -------------------------------
+db:
+	@echo "🗄️  Starting PostgreSQL (pgvector)..."
+	docker-compose up -d db
+	@echo "✅ Database ready on port 5432"
+
+db-stop:
+	@echo "🛑 Stopping PostgreSQL..."
+	docker-compose stop db
+
+# -------------------------------
 # Data Pipeline
 # -------------------------------
 ingest:
-	@echo "📄 Starting Azure/Postgres Ingestion..."
-	PYTHONPATH=. $(PYTHON) app/ingest.py
+	@echo "📄 Starting Azure Read + Postgres Ingestion..."
+	PYTHONPATH=. $(PYTHON) app/ingest.py --config configs/ingestion/azure_read_postgres.yaml
 
-reindex:
-	@echo "🔍 Rebuilding Search Index..."
-	$(PYTHON) -m scripts.indexing.build_embeddings --chunks data/staging/chunks.jsonl --out_vecs data/embeddings/embeddings.npy --out_ids data/embeddings/ids.npy --model text-embedding-3-small --adapter openai --batch 256 --normalize
-	$(PYTHON) -m scripts.indexing.build_faiss --embeddings data/embeddings/embeddings.npy --ids data/embeddings/ids.npy --out_index data/embeddings/vectors.faiss
 
 # -------------------------------
 # Maintenance

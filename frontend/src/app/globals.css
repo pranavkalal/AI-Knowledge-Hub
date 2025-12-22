@@ -29,6 +29,20 @@
   animation: sparkle-spin 3s linear infinite;
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
 @layer base {
   :root {
     --background: 210 40% 98%;

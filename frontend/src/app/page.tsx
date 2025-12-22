@@ -2,22 +2,99 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, ArrowRight, Leaf, Droplets, Sprout } from "lucide-react";
+import { Search, ArrowRight, Leaf, Droplets, Sprout, Users, FlaskConical, BookOpen, Bug, Microscope, FileText, Tractor, Beaker, ClipboardList } from "lucide-react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { PersonaType } from "@/lib/api";
+
+// Persona-specific configurations
+const personaConfig = {
+  grower: {
+    placeholder: "How can I improve my cotton yield?",
+    cards: [
+      {
+        icon: Bug,
+        text: "What are the best practices for managing Fusarium wilt?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: Droplets,
+        text: "How can I improve water productivity on my farm?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: Tractor,
+        text: "What cover crops work best before cotton?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+  researcher: {
+    placeholder: "What does the research say about...?",
+    cards: [
+      {
+        icon: Microscope,
+        text: "What are the social sustainability indicators for cotton?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: Beaker,
+        text: "How is climate affecting cotton growing regions?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: FlaskConical,
+        text: "What biosecurity risks affect Australian cotton?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+  extension_officer: {
+    placeholder: "What guidance can I share about...?",
+    cards: [
+      {
+        icon: ClipboardList,
+        text: "What are the latest disease management recommendations?",
+        color: "text-purple-600",
+        bg: "bg-purple-50",
+      },
+      {
+        icon: BookOpen,
+        text: "How should growers manage herbicide resistance?",
+        color: "text-blue-600",
+        bg: "bg-blue-50",
+      },
+      {
+        icon: FileText,
+        text: "What integrated weed management strategies work best?",
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+      },
+    ],
+  },
+};
 
 export default function Home() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [persona, setPersona] = useState<PersonaType>("grower");
+
+  const currentConfig = useMemo(() => personaConfig[persona], [persona]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
-      router.push(`/chat?q=${encodeURIComponent(query)}`);
+      router.push(`/chat?q=${encodeURIComponent(query)}&persona=${persona}`);
     }
   };
 
@@ -37,7 +114,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col relative bg-white px-4">
+    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col relative bg-background px-4">
       {/* Top Logo Area */}
       <div className="absolute top-4 left-4">
         <img src="/logo.png" alt="CRDC Logo" className="h-8 w-auto object-contain" />
@@ -51,10 +128,10 @@ export default function Home() {
           className="w-full max-w-3xl space-y-8 text-center"
         >
           <motion.div variants={item} className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-slate-900">
-              Unlock <span className="text-[#692080]">Cotton Research</span>
+            <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl text-slate-900 dark:text-white font-heading">
+              Unlock <span className="text-[#692080] dark:text-purple-400">Cotton Research</span>
             </h1>
-            <p className="mx-auto max-w-[700px] text-slate-500 md:text-xl">
+            <p className="mx-auto max-w-[700px] text-slate-500 dark:text-slate-400 md:text-xl">
               Ask complex questions about Australian cotton R&D. Get answers grounded in
               verified reports, with direct citations to the source PDF.
             </p>
@@ -63,14 +140,26 @@ export default function Home() {
           <motion.div variants={item} className="mx-auto w-full max-w-2xl">
             <form onSubmit={handleSearch} className="relative group">
               <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 opacity-0 transition-opacity duration-500 group-hover:opacity-100 blur-xl" />
-              <div className="relative flex items-center rounded-3xl bg-[#f0f4f9] px-4 py-3 shadow-sm transition-all focus-within:bg-white focus-within:shadow-md hover:bg-[#e2e7eb]">
+              <div className="relative flex items-center rounded-3xl bg-slate-100 dark:bg-slate-800 px-4 py-3 shadow-sm transition-all focus-within:bg-white dark:focus-within:bg-slate-700 focus-within:shadow-md hover:bg-slate-200 dark:hover:bg-slate-700">
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Ask about pests, water efficiency, or yield data..."
-                  className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder={currentConfig.placeholder}
+                  className="flex-1 border-none bg-transparent text-lg placeholder:text-slate-500 dark:placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-white"
                 />
                 <div className="flex items-center space-x-2 text-slate-400">
+                  <div className="relative">
+                    <select
+                      value={persona}
+                      onChange={(e) => setPersona(e.target.value as PersonaType)}
+                      className="appearance-none bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 text-sm text-slate-600 dark:text-slate-200 cursor-pointer hover:border-slate-300 dark:hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    >
+                      <option value="grower">🌱 Grower</option>
+                      <option value="researcher">🔬 Researcher</option>
+                      <option value="extension_officer">📋 Extension</option>
+                    </select>
+                    <Users className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  </div>
                   <Button
                     type="submit"
                     size="icon"
@@ -87,41 +176,31 @@ export default function Home() {
             </form>
           </motion.div>
 
-          <motion.div variants={item} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                icon: Leaf,
-                text: "What are the best practices for integrated pest management?",
-                color: "text-purple-600",
-                bg: "bg-purple-50",
-              },
-              {
-                icon: Droplets,
-                text: "Explain the nitrogen use efficiency guidelines for 2024.",
-                color: "text-blue-600",
-                bg: "bg-blue-50",
-              },
-              {
-                icon: Sprout,
-                text: "How does soil moisture affect cotton yield potential?",
-                color: "text-amber-600",
-                bg: "bg-amber-50",
-              },
-            ].map((card, i) => (
-              <div
-                key={i}
-                onClick={() => setQuery(card.text)}
-                className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-[#f0f4f9] p-4 text-center transition-all hover:bg-[#dde3ea]"
-              >
-                <div className="mb-3 rounded-full bg-white p-2 shadow-sm">
-                  <card.icon className={`h-6 w-6 ${card.color}`} />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={persona}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            >
+              {currentConfig.cards.map((card, i) => (
+                <div
+                  key={i}
+                  onClick={() => setQuery(card.text)}
+                  className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 p-4 text-center transition-all hover:bg-slate-200 dark:hover:bg-slate-700"
+                >
+                  <div className="mb-3 rounded-full bg-white dark:bg-slate-700 p-2 shadow-sm">
+                    <card.icon className={`h-6 w-6 ${card.color}`} />
+                  </div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                    {card.text}
+                  </p>
                 </div>
-                <p className="text-sm font-medium text-slate-700">
-                  {card.text}
-                </p>
-              </div>
-            ))}
-          </motion.div>
+              ))}
+            </motion.div>
+          </AnimatePresence>
         </motion.div>
       </div>
     </div>

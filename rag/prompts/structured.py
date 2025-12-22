@@ -14,12 +14,16 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field, ValidationError
 
+# Import persona system from app.services.prompting
+from app.services.prompting import get_system_prompt, DEFAULT_PERSONA, allows_general_knowledge
+
 SYSTEM_PROMPT = (
     "You are an expert research assistant for the Cotton Research and Development Corporation (CRDC). "
     "Your goal is to provide comprehensive, accurate answers based ONLY on the provided source documents. "
     "If the sources do not contain the answer, state that clearly. Do not hallucinate."
 )
 
+# Strict mode - researcher persona
 PROMPT_USER_INSTRUCTIONS = (
     "Synthesize the information from the provided source passages to answer the user's question. "
     "Structure your answer logically (e.g., use paragraphs for explanations, bullet points for lists). "
@@ -33,6 +37,20 @@ STRUCTURED_FORMAT_INSTRUCTIONS = (
     "- Ensure every factual claim is supported by an inline citation like [S1].\n"
     "- Do not use a fixed 'Summary/Key Points/Conclusion' structure unless it fits the question. Adapt your structure to best answer the query.\n"
     "Do not use JSON. Write natural text."
+)
+
+# Hybrid mode - grower/extension persona (allows general knowledge)
+PROMPT_USER_INSTRUCTIONS_HYBRID = (
+    "Answer naturally. Use the provided sources if they're helpful, otherwise just answer from what you know. "
+    "Keep it conversational."
+)
+
+STRUCTURED_FORMAT_INSTRUCTIONS_HYBRID = (
+    "Just answer naturally like you're chatting. "
+    "Short question = short answer. Complex question = more detail if needed. "
+    "Only cite [S1] etc if you're actually using info from the provided sources. "
+    "If answering from your own knowledge, no citations needed. "
+    "Don't force headings or bullet points unless they genuinely help."
 )
 
 USER_PROMPT_TEMPLATE = (
@@ -73,7 +91,7 @@ class StructuredAnswer(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
-        anystr_strip_whitespace = True
+        str_strip_whitespace = True
 
 
 def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,6 +139,46 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
 
         lines.append(f"[{sid}] {title}{suffix}: {snippet}")
 
+        # Calculate bbox from bboxes if available
+        bboxes = meta.get("bboxes")
+        bbox = None
+        if bboxes and isinstance(bboxes, list) and len(bboxes) > 0:
+            # Union all bboxes to get bounding rectangle
+            all_x1, all_y1, all_x2, all_y2 = [], [], [], []
+            for item in bboxes:
+                if not isinstance(item, dict):
+                    continue
+                    
+                # NEW FORMAT: {"bbox": [x, y, w, h], "text": "..."} - already in points
+                if "bbox" in item:
+                    bb = item.get("bbox")
+                    if bb and isinstance(bb, list) and len(bb) >= 4:
+                        x, y, w, h = bb[:4]
+                        all_x1.append(x)
+                        all_y1.append(y)
+                        all_x2.append(x + w)
+                        all_y2.append(y + h)
+                        continue
+                
+                # OLD FORMAT: {"polygon": [...], "text": "..."} - in inches
+                poly = item.get("polygon")
+                if poly and isinstance(poly, list) and len(poly) >= 4:
+                    xs = poly[0::2]  # x coords
+                    ys = poly[1::2]  # y coords
+                    # Convert from inches to points (72 per inch)
+                    all_x1.append(min(xs) * 72)
+                    all_y1.append(min(ys) * 72)
+                    all_x2.append(max(xs) * 72)
+                    all_y2.append(max(ys) * 72)
+                    
+            if all_x1:
+                bbox = [
+                    min(all_x1),
+                    min(all_y1),
+                    max(all_x2) - min(all_x1),
+                    max(all_y2) - min(all_y1)
+                ]
+
         citations.append(
             {
                 "sid": sid,
@@ -128,6 +186,7 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
                 "title": meta.get("title"),
                 "year": year,
                 "page": page,
+                "bbox": bbox,
                 "score": meta.get("score"),
                 "faiss_score": meta.get("faiss_score"),
                 "rerank_score": meta.get("rerank_score"),
@@ -141,7 +200,14 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
-    sources_block = "\n".join(lines) if lines else "(no sources)"
+    sources_block = "\n".join(lines) if lines else "(no sources provided)"
+    
+    # Get persona and choose appropriate instructions
+    persona = data.get("persona") or DEFAULT_PERSONA
+    is_hybrid = allows_general_knowledge(persona)
+    
+    user_instructions = PROMPT_USER_INSTRUCTIONS_HYBRID if is_hybrid else PROMPT_USER_INSTRUCTIONS
+    format_instructions = STRUCTURED_FORMAT_INSTRUCTIONS_HYBRID if is_hybrid else STRUCTURED_FORMAT_INSTRUCTIONS
 
     return {
         "question": question,
@@ -149,20 +215,38 @@ def prepare_prompt_state(data: Dict[str, Any]) -> Dict[str, Any]:
         "citations": citations,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "instructions": PROMPT_USER_INSTRUCTIONS,
-        "format_instructions": STRUCTURED_FORMAT_INSTRUCTIONS,
+        "instructions": user_instructions,
+        "format_instructions": format_instructions,
         "k": max(requested_k, len(citations)),
+        "persona": persona,
     }
 
 
 def build_prompt_messages(state: Dict[str, Any]):
+    """Build chat prompt messages, using persona-specific system prompt if provided."""
     format_instructions = state.get("format_instructions", STRUCTURED_FORMAT_INSTRUCTIONS)
     citation_ids = [str(c.get("sid")) for c in state.get("citations", []) if c.get("sid")]
     if citation_ids:
         format_instructions = (
             f"{format_instructions}\nAvailable citation IDs: {', '.join(citation_ids)}"
         )
-    prompt_value = CHAT_PROMPT.invoke(
+    
+    # Get persona-specific system prompt
+    persona = state.get("persona") or DEFAULT_PERSONA
+    system_prompt = get_system_prompt(persona)
+    
+    # Build dynamic chat prompt template with persona-specific system prompt
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            (
+                "human",
+                "{instructions}\n\nQuestion:\n{question}\n\nSource Passages:\n{sources_block}\n\n{format_instructions}",
+            ),
+        ]
+    )
+    
+    prompt_value = chat_prompt.invoke(
         {
             "instructions": state.get("instructions", PROMPT_USER_INSTRUCTIONS),
             "question": state.get("question", ""),

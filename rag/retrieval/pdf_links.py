@@ -27,16 +27,7 @@ def get_pdf_filename(doc_id: str) -> Optional[str]:
     if not doc_id:
         return None
 
-    # Try SQLite lookup
-    try:
-        from rag.store.sqlite_store import get_document
-        doc = get_document(doc_id)
-        if doc and doc.get("filename"):
-            return doc["filename"]
-    except Exception:
-        pass
-
-    # Fallback to default
+    # Use filesystem lookup (Postgres adapter handles metadata separately)
     filename = _default_filename(doc_id)
     if filename:
         return filename

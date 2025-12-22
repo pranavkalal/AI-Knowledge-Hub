@@ -47,4 +47,4 @@ def pdf_by_doc_id(doc_id: str):
         print(f"[WARN] PDF resolution failed for doc_id: {doc_id}, filename: {filename}. Error: {e.detail}")
         raise e
         
-    return FileResponse(path, media_type="application/pdf", filename=path.name)
+    return FileResponse(path, media_type="application/pdf", filename=path.name, content_disposition_type="inline")

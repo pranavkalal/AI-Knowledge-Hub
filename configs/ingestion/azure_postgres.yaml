@@ -1,9 +1,8 @@
 # configs/ingestion/azure_postgres.yaml
 # Ingestion config for Azure Document Intelligence + PostgreSQL
+# PRODUCTION CONFIG (updated 2024-12)
 
-seed_urls:
-  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2024+Final+Reports+%28266423%29"
-  - "https://www.insidecotton.com/search?search_api_fulltext=&category=2023+Final+Reports+%28266358%29"
+seed_urls: []  # Not used - we process local PDFs
 
 include_patterns:
   - '\.pdf$'
@@ -16,12 +15,20 @@ storage:
 
 embedder:
   provider: openai
-  model: text-embedding-3-small
+  model: text-embedding-3-large  # ⬆️ Production model (3072 dims)
+
+# Hybrid semantic chunking config (Option C)
+chunking:
+  strategy: semantic_per_page
+  max_tokens: 600        # Smaller chunks for better retrieval
+  overlap: 100           # Sentence overlap
+  min_chunk_tokens: 50   # Skip tiny chunks
 
 output:
   jsonl: "data/staging/azure_chunks.jsonl"
   csv: "data/staging/azure_index.csv"
 
-download_dir: "data/raw"
+download_dir: "data/raw"  # Sample PDF directory
 
-limit: 15
+limit: 40  # Sample PDFs only (production: increase to 3100)
+

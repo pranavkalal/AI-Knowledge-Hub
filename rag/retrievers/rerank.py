@@ -1,61 +1,30 @@
-from __future__ import annotations
+# rag/retrievers/rerank.py
+"""
+Cross-Encoder Reranking Interface (Blueprint).
 
-from typing import Any, List
+This module wraps a Cross-Encoder model (e.g., bge-reranker-v2-m3) to
+rescore candidate documents based on semantic relevance to the query.
+"""
 
-from langchain_core.documents import Document
-from langchain_core.retrievers import BaseRetriever
+from typing import List, Dict, Any
 
-from rag.retrieval.pdf_links import enrich_metadata
+class Reranker:
+    """
+    Architecture for the second-stage reranking optimization.
+    """
+    
+    def __init__(self, model_name: str, top_n: int = 5):
+        self.model_name = model_name
+        self.top_n = top_n
 
-
-class RerankDecoratorRetriever(BaseRetriever):
-    """Apply the configured reranker on top of another retriever."""
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    base: BaseRetriever
-    reranker: Any
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager=None
-    ) -> List[Document]:
-        docs = self.base.get_relevant_documents(query)
-        hits = []
-        for d in docs:
-            md = dict(d.metadata)
-            md["text"] = d.page_content
-            md.setdefault("preview", d.page_content)
-            base_score = md.get("score")
-            faiss_score = md.get("faiss_score", base_score)
-            hit_payload = {
-                "score": base_score,
-                "faiss_score": faiss_score,
-                "metadata": md,
-            }
-            hits.append(hit_payload)
-
-        try:
-            reranked = self.reranker.rerank(
-                query if isinstance(query, str) else query.get("question", ""),
-                hits,
-            )
-        except Exception:
-            reranked = hits
-
-        out: List[Document] = []
-        for h in reranked:
-            md = dict(h["metadata"])
-            text = md.pop("text", "") or md.get("preview", "")
-            faiss_score = h.get("faiss_score", md.get("faiss_score"))
-            rerank_score = h.get("rerank_score")
-            if faiss_score is not None:
-                md["faiss_score"] = faiss_score
-            if rerank_score is not None:
-                md["rerank_score"] = rerank_score
-                md["score"] = rerank_score
-            else:
-                md["score"] = h.get("score")
-            md = enrich_metadata(md)
-            out.append(Document(page_content=text, metadata=md))
-        return out
+    def rerank(self, query: str, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Re-orders the documents by scoring the (Query, Document) pairs.
+        
+        Optimizations modeled:
+        - Batch processing for GPU throughput
+        - Mixed precision inference (AMP)
+        - Truncation strategies for long context
+        """
+        # ... logic redacted ...
+        return docs

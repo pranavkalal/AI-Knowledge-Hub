@@ -174,7 +174,7 @@ def resolve_retrieval_settings(filters: Optional[Dict[str, Any]]) -> RetrievalSe
     year_min = _to_int(filters.get("year_min"))
     year_max = _to_int(filters.get("year_max"))
     neighbors = _to_int(filters.get("neighbors"), default=1, minimum=0)
-    per_doc = _to_int(filters.get("per_doc"), default=1, minimum=0)
+    per_doc = _to_int(filters.get("per_doc"), default=2, minimum=0)  # Allow 2 chunks per doc
     diversify = filters.get("diversify_per_doc", True)
     if isinstance(diversify, str):
         diversify = diversify.lower() not in {"false", "0", "no"}
@@ -231,10 +231,23 @@ def prepare_hits(
             if extra:
                 lookup[chunk_id] = extra
 
-        base_meta = lookup.get(chunk_id, md)
+        # Start with original hit metadata (includes bboxes from Postgres query)
+        original_md = hit.get("metadata", {}) if isinstance(hit, dict) else {}
+        base_meta = lookup.get(chunk_id, {})
+        # Merge: base_meta first, then original_md (so original data takes precedence)
         meta = dict(base_meta) if isinstance(base_meta, dict) else {}
+        if isinstance(original_md, dict):
+            meta.update(original_md)  # original_md (with bboxes) overrides lookup
         meta["id"] = chunk_id
-        doc_id = meta.get("doc_id") or chunk_id.split("_chunk")[0]
+        # Handle both formats: {doc_id}_chunk{N} and {doc_id}_p{page}_{index}
+        doc_id = meta.get("doc_id")
+        if not doc_id:
+            if "_chunk" in chunk_id:
+                doc_id = chunk_id.split("_chunk")[0]
+            elif "_p" in chunk_id:
+                doc_id = chunk_id.rsplit("_p", 1)[0]
+            else:
+                doc_id = chunk_id
         meta["doc_id"] = doc_id
 
         title = meta.get("title") or meta.get("doc_title") or doc_id or chunk_id
@@ -250,6 +263,11 @@ def prepare_hits(
 
         if not passes_filters(meta, settings.contains, settings.year_min, settings.year_max):
             continue
+
+        # IMPORTANT: Copy text from hit to metadata (Postgres returns it at hit["text"])
+        raw_text = hit.get("text") or ""
+        if raw_text and not meta.get("text"):
+            meta["text"] = raw_text
 
         if settings.diversify_per_doc and settings.per_doc > 0 and per_doc_counts[doc_id] >= settings.per_doc:
             continue

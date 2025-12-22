@@ -22,6 +22,20 @@ export function PDFRenderer({ url, page, bbox, scale, onLoadSuccess }: PDFRender
     const [pageWidth, setPageWidth] = useState<number>(0);
     const [pageHeight, setPageHeight] = useState<number>(0);
 
+    // Debug logging
+    useEffect(() => {
+        console.log(`[PDFRenderer] bbox received:`, bbox);
+        console.log(`[PDFRenderer] pageWidth:`, pageWidth, 'scale:', scale);
+        if (bbox && pageWidth > 0) {
+            console.log(`[PDFRenderer] Would render highlight at:`, {
+                left: bbox[0] * scale,
+                top: bbox[1] * scale,
+                width: bbox[2] * scale,
+                height: bbox[3] * scale
+            });
+        }
+    }, [bbox, pageWidth, scale]);
+
     function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
         setNumPages(numPages);
         if (onLoadSuccess) onLoadSuccess(numPages);
@@ -33,18 +47,21 @@ export function PDFRenderer({ url, page, bbox, scale, onLoadSuccess }: PDFRender
     }
 
     return (
-        <div className="relative inline-block shadow-lg">
+        <div className="relative inline-block">
             <Document
                 file={url}
                 onLoadSuccess={onDocumentLoadSuccess}
                 loading={
-                    <div className="flex items-center justify-center h-96 w-[600px] bg-slate-100 text-slate-400">
+                    <div className="flex flex-col items-center justify-center h-96 w-[600px] bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 gap-3">
+                        <div className="h-8 w-8 border-2 border-slate-300 dark:border-slate-600 border-t-purple-500 rounded-full animate-spin" />
                         Loading PDF...
                     </div>
                 }
                 error={
-                    <div className="flex items-center justify-center h-96 w-[600px] bg-red-50 text-red-400">
-                        Failed to load PDF
+                    <div className="flex flex-col items-center justify-center h-96 w-[600px] bg-red-50 dark:bg-red-900/20 text-red-400 gap-2">
+                        <span className="text-4xl">📄</span>
+                        <span>Failed to load PDF</span>
+                        <span className="text-xs text-red-300">Check if the document exists</span>
                     </div>
                 }
             >
@@ -54,24 +71,19 @@ export function PDFRenderer({ url, page, bbox, scale, onLoadSuccess }: PDFRender
                     onLoadSuccess={onPageLoadSuccess}
                     renderTextLayer={true}
                     renderAnnotationLayer={true}
-                    className="border bg-white"
+                    className="bg-white"
                 />
             </Document>
 
             {/* Bbox Highlight Overlay */}
             {bbox && pageWidth > 0 && (
                 <div
-                    className="absolute border-2 border-emerald-500 bg-emerald-500/20 pointer-events-none transition-all duration-300"
+                    className="absolute border-2 border-purple-500 bg-purple-500/20 pointer-events-none animate-pulse z-50 rounded"
                     style={{
                         left: `${bbox[0] * scale}px`,
-                        // PDF coordinates are usually bottom-left origin, but Docling might normalize.
-                        // If standard PDF coords (bottom-left): top = pageHeight - y - height
-                        // If top-left origin (Docling/HTML-like): top = y
-                        // We'll assume Docling provides top-left based on previous analysis, 
-                        // but if it's bottom-left, we'd need: top: `${(pageHeight - bbox[1] - bbox[3]) * scale}px`
                         top: `${bbox[1] * scale}px`,
-                        width: `${bbox[2] * scale}px`,
-                        height: `${bbox[3] * scale}px`,
+                        width: `${Math.max(bbox[2] * scale, 50)}px`,
+                        height: `${Math.max(bbox[3] * scale, 20)}px`,
                     }}
                 />
             )}

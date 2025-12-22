@@ -3,15 +3,18 @@ End-to-end QA pipeline: embed query -> retrieve -> (optional) rerank -> build pr
 Returns the generated answer and normalized source list for the API layer.
 """
 
+import logging
 from time import perf_counter
 from typing import Dict, List, Optional, Any
 from app.ports import EmbedderPort, VectorStorePort, RerankerPort, LLMPort
-from app.services.prompting import SYSTEM, build_user_prompt
+from app.services.prompting import get_system_prompt, build_user_prompt, allows_general_knowledge, DEFAULT_PERSONA
 from app.services.formatting import format_citation, format_metadata, format_snippet
 from rag.retrieval.utils import (
     resolve_retrieval_settings,
     prepare_hits,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class QAPipeline:
@@ -27,7 +30,8 @@ class QAPipeline:
         *,
         mode: Optional[str] = None,           # "dense" | "bm25" | "hybrid" (store may ignore)
         filters: Optional[Dict[str, Any]] = None,  # e.g., {"year_min": 2019, "year_max": 2025}
-        rerank: Optional[bool] = None         # True to force, False to skip, None = default behavior
+        rerank: Optional[bool] = None,        # True to force, False to skip, None = default behavior
+        persona: Optional[str] = None         # "researcher" | "grower" | "extension_officer"
     ) -> Dict:
         """
         Returns dict with keys: answer, sources, usage
@@ -78,7 +82,7 @@ class QAPipeline:
         # 4) stitch metadata before reranking
         stitch_start = perf_counter()
         stitched_hits = prepare_hits(hits, self.store, settings, limit=candidate_limit)
-        print(f"[qa.debug] candidates_before_rerank={len(stitched_hits)}")
+        logger.debug("candidates_before_rerank=%d", len(stitched_hits))
         stitch_ms = (perf_counter() - stitch_start) * 1000.0
 
         # 5) optional rerank
@@ -96,9 +100,7 @@ class QAPipeline:
         
         # 6) limit to requested k after rerank
         hits = final_hits[:k]
-        print(
-            f"[qa.debug] after_rerank={len(final_hits)} final_k={len(hits)}"
-        )
+        logger.debug("after_rerank=%d final_k=%d", len(final_hits), len(hits))
 
         if not hits:
             # no retrieval = don't pay LLM tax
@@ -129,14 +131,18 @@ class QAPipeline:
                 citation.setdefault("rel_path", rel_path)
             citations.append(citation)
 
-        user = build_user_prompt(q, "\n\n".join(lines))
-        answer, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+        # Get persona-specific prompt configuration
+        active_persona = persona or DEFAULT_PERSONA
+        system_prompt = get_system_prompt(active_persona)
+        hybrid_mode = allows_general_knowledge(active_persona)
+        user = build_user_prompt(q, "\n\n".join(lines), hybrid=hybrid_mode)
+        answer, usage = self.llm.chat(system_prompt, user, temperature, max_tokens)
 
         total_ms = (perf_counter() - total_start) * 1000.0
         rerank_batches = getattr(self.rerank, "last_batches", 0) if do_rerank else 0
-        print(
-            f"[qa.timing] ANN={ann_ms:.1f}ms stitch={stitch_ms:.1f}ms rerank={rerank_ms:.1f}ms "
-            f"total={total_ms:.1f}ms rerank_batches={rerank_batches}"
+        logger.info(
+            "QA timing: ANN=%.1fms stitch=%.1fms rerank=%.1fms total=%.1fms rerank_batches=%d",
+            ann_ms, stitch_ms, rerank_ms, total_ms, rerank_batches
         )
 
         if citations:
@@ -176,7 +182,8 @@ class QAPipeline:
         *,
         mode: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
-        rerank: Optional[bool] = None
+        rerank: Optional[bool] = None,
+        persona: Optional[str] = None
     ):
         """
         Yields events:
@@ -268,14 +275,17 @@ class QAPipeline:
         # Yield sources first
         yield {"type": "sources", "data": citations}
 
-        # Call LLM stream
-        user = build_user_prompt(q, "\n\n".join(lines))
+        # Call LLM stream with persona-specific prompt
+        active_persona = persona or DEFAULT_PERSONA
+        system_prompt = get_system_prompt(active_persona)
+        hybrid_mode = allows_general_knowledge(active_persona)
+        user = build_user_prompt(q, "\n\n".join(lines), hybrid=hybrid_mode)
         
         if hasattr(self.llm, "chat_stream"):
-            for token in self.llm.chat_stream(SYSTEM, user, temperature, max_tokens):
+            for token in self.llm.chat_stream(system_prompt, user, temperature, max_tokens):
                 yield {"type": "token", "token": token}
         else:
             # Fallback to sync
-            ans, usage = self.llm.chat(SYSTEM, user, temperature, max_tokens)
+            ans, usage = self.llm.chat(system_prompt, user, temperature, max_tokens)
             yield {"type": "token", "token": ans}
             yield {"type": "usage", "data": usage}
