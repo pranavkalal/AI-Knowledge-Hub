@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}GraphRAG LLM Dashboard{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <form method="get" class="filters">
+    <input type="search" name="q" placeholder="Search model or provider" value="{{ filters.q }}">
+    <select name="role">
+      <option value="">All GraphRAG roles</option>
+      {% for item in roles %}
+      <option value="{{ item }}" {% if filters.role == item %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+    <select name="hardware_fit">
+      <option value="">All hardware fits</option>
+      {% for item in hardware_fits %}
+      <option value="{{ item }}" {% if filters.hardware_fit == item %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+    <select name="recommendation">
+      <option value="">All recommendations</option>
+      {% for item in recommendations %}
+      <option value="{{ item }}" {% if filters.recommendation == item %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+    <select name="sort">
+      <option value="score" {% if filters.sort == "score" %}selected{% endif %}>Sort: GraphRAG score</option>
+      <option value="last_seen" {% if filters.sort == "last_seen" %}selected{% endif %}>Sort: last seen</option>
+    </select>
+    <button type="submit">Apply</button>
+  </form>
+  <div class="admin-actions">
+    <form method="post" action="/admin/update"><button>Run update now</button></form>
+    <form method="post" action="/admin/import-seed"><button>Import optional seed</button></form>
+    <form method="post" action="/admin/reclassify"><button>Reclassify</button></form>
+  </div>
+</section>
+
+<section class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>Provider</th>
+        <th>Source</th>
+        <th>Type</th>
+        <th>Context</th>
+        <th>Hardware</th>
+        <th>GraphRAG roles</th>
+        <th>Score</th>
+        <th>Recommendation</th>
+        <th>Last seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for model in models %}
+      <tr>
+        <td><a href="/models/{{ model.id }}">{{ model.model_name }}</a></td>
+        <td>{{ model.provider }}</td>
+        <td>{{ model.source }}</td>
+        <td>{{ model.model_type }}</td>
+        <td>{{ model.context_window or "unknown" }}</td>
+        <td>{{ model.hardware_fit or "unknown" }}</td>
+        <td class="roles">{% for role in model.graph_rag_roles %}<span>{{ role }}</span>{% endfor %}</td>
+        <td><strong>{{ model.graph_rag_score or 1 }}</strong></td>
+        <td><span class="badge {{ model.recommendation }}">{{ model.recommendation }}</span></td>
+        <td>{{ model.last_seen_at or "unknown" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="empty">No models yet. Import the seed file or run an update.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

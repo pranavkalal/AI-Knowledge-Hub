@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ model.model_name }}{% endblock %}
+{% block content %}
+<section class="detail-header">
+  <div>
+    <a class="back" href="/">Back to dashboard</a>
+    <h1>{{ model.model_name }}</h1>
+    <p>{{ model.provider }} - {{ model.model_type }} - {{ model.source }}</p>
+  </div>
+  <div class="scorebox">
+    <span>GraphRAG</span>
+    <strong>{{ model.graph_rag_score }}</strong>
+  </div>
+</section>
+
+<section class="detail-grid">
+  <article>
+    <h2>Classification</h2>
+    <dl>
+      <dt>Recommendation</dt><dd>{{ model.recommendation }}</dd>
+      <dt>Hardware fit</dt><dd>{{ model.hardware_fit }}</dd>
+      <dt>Hardware score</dt><dd>{{ model.hardware_score }}</dd>
+      <dt>Cost score</dt><dd>{{ model.cost_score }}</dd>
+      <dt>Input cost</dt><dd>{% if model.estimated_cost_input is not none %}${{ model.estimated_cost_input }}/1M tokens{% else %}unknown{% endif %}</dd>
+      <dt>Output cost</dt><dd>{% if model.estimated_cost_output is not none %}${{ model.estimated_cost_output }}/1M tokens{% else %}unknown{% endif %}</dd>
+      <dt>Context window</dt><dd>{{ model.context_window or "unknown" }}</dd>
+      <dt>API available</dt><dd>{{ model.api_available }}</dd>
+      <dt>Local available</dt><dd>{{ model.local_available }}</dd>
+    </dl>
+  </article>
+  <article>
+    <h2>GraphRAG Roles</h2>
+    <div class="roles large">{% for role in model.graph_rag_roles %}<span>{{ role }}</span>{% endfor %}</div>
+    <h2>Why</h2>
+    <ul>{% for note in model.classification_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  </article>
+  <article>
+    <h2>Strengths</h2>
+    <ul>{% for item in model.strengths %}<li>{{ item }}</li>{% endfor %}</ul>
+    <h2>Weaknesses</h2>
+    <ul>{% for item in model.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul>
+  </article>
+  <article>
+    <h2>Notes</h2>
+    <p>{{ model.notes or "No manual notes yet." }}</p>
+    {% if model.source_url %}<p><a href="{{ model.source_url }}">Source page</a></p>{% endif %}
+  </article>
+</section>
+
+<section class="raw">
+  <h2>Raw Metadata</h2>
+  <pre>{{ model.raw_metadata_json }}</pre>
+</section>
+{% endblock %}
