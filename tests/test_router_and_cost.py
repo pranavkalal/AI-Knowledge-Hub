@@ -9,6 +9,26 @@ class RouterAndCostTests(unittest.TestCase):
     def test_negative_source_price_means_unknown(self):
         self.assertIsNone(normalize_cost_per_million("-1"))
 
+    def test_reclassify_converts_per_token_prices_to_per_million(self):
+        classified = classify_model(
+            {
+                "model_name": "openai/gpt-test",
+                "provider": "openai",
+                "source": "litellm_catalog",
+                "api_available": True,
+                "local_available": False,
+                "estimated_cost_input": 0.00000025,
+                "estimated_cost_output": 0.00000125,
+                "context_window": 128000,
+                "modalities": ["text"],
+                "strengths": [],
+                "weaknesses": [],
+                "graph_rag_roles": [],
+            }
+        )
+        self.assertEqual(classified["estimated_cost_input"], 0.25)
+        self.assertEqual(classified["estimated_cost_output"], 1.25)
+
     def test_openrouter_auto_is_not_scored_as_real_llm(self):
         record = normalize_raw_item(
             RawModelItem(

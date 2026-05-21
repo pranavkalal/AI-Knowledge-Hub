@@ -24,6 +24,8 @@
       <dt>Input cost</dt><dd>{% if model.estimated_cost_input is not none %}${{ model.estimated_cost_input }}/1M tokens{% else %}unknown{% endif %}</dd>
       <dt>Output cost</dt><dd>{% if model.estimated_cost_output is not none %}${{ model.estimated_cost_output }}/1M tokens{% else %}unknown{% endif %}</dd>
       <dt>Context window</dt><dd>{{ model.context_window or "unknown" }}</dd>
+      <dt>Release date</dt><dd>{{ model.release_date or "unknown" }}</dd>
+      <dt>Last catalog refresh</dt><dd>{{ model.last_seen_at or "unknown" }}</dd>
       <dt>API available</dt><dd>{{ model.api_available }}</dd>
       <dt>Local available</dt><dd>{{ model.local_available }}</dd>
     </dl>

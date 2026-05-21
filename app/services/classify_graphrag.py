@@ -335,6 +335,10 @@ def _nonnegative_price(value: Any) -> float | None:
     price = _to_float(value)
     if price is None or price < 0:
         return None
+    # Provider catalogs such as LiteLLM/OpenRouter often publish prices as
+    # USD per token. The dashboard stores and compares USD per 1M tokens.
+    if 0 < price < 0.01:
+        return price * 1_000_000
     return price
 
 

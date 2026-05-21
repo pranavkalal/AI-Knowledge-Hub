@@ -24,7 +24,7 @@
     </select>
     <select name="sort">
       <option value="score" {% if filters.sort == "score" %}selected{% endif %}>Sort: GraphRAG score</option>
-      <option value="last_seen" {% if filters.sort == "last_seen" %}selected{% endif %}>Sort: last seen</option>
+      <option value="release_date" {% if filters.sort == "release_date" %}selected{% endif %}>Sort: release date</option>
     </select>
     <button type="submit">Apply</button>
   </form>
@@ -48,7 +48,7 @@
         <th>GraphRAG roles</th>
         <th>Score</th>
         <th>Recommendation</th>
-        <th>Last seen</th>
+        <th>Release date</th>
       </tr>
     </thead>
     <tbody>
@@ -63,7 +63,7 @@
         <td class="roles">{% for role in model.graph_rag_roles %}<span>{{ role }}</span>{% endfor %}</td>
         <td><strong>{{ model.graph_rag_score or 1 }}</strong></td>
         <td><span class="badge {{ model.recommendation }}">{{ model.recommendation }}</span></td>
-        <td>{{ model.last_seen_at or "unknown" }}</td>
+        <td>{{ model.release_date or "unknown" }}</td>
       </tr>
       {% else %}
       <tr><td colspan="10" class="empty">No models yet. Import the seed file or run an update.</td></tr>

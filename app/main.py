@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db, init_db
 from app.models import ModelRecord
 from app.services.export import export_records_csv, export_records_json
+from app.services.normalize import normalize_release_date
 from app.services.update_pipeline import import_manual_seed, records_for_export, reclassify_all, run_update_pipeline
 
 app = FastAPI(title="GraphRAG LLM Comparison Dashboard")
@@ -33,7 +34,7 @@ def dashboard(
     role: str = "",
     hardware_fit: str = "",
     recommendation: str = "",
-    sort: str = Query("score", pattern="^(score|last_seen)$"),
+    sort: str = Query("score", pattern="^(score|release_date|last_seen)$"),
 ) -> HTMLResponse:
     query = db.query(ModelRecord)
     # Build the dashboard query from optional filters so blank form fields keep
@@ -47,7 +48,9 @@ def dashboard(
         query = query.filter(ModelRecord.hardware_fit == hardware_fit)
     if recommendation:
         query = query.filter(ModelRecord.recommendation == recommendation)
-    if sort == "last_seen":
+    if sort == "release_date":
+        query = query.order_by(desc(ModelRecord.release_date), desc(ModelRecord.graph_rag_score), asc(ModelRecord.model_name))
+    elif sort == "last_seen":
         query = query.order_by(desc(ModelRecord.last_seen_at))
     else:
         query = query.order_by(desc(ModelRecord.graph_rag_score), asc(ModelRecord.model_name))
@@ -126,7 +129,7 @@ def view_model(model: ModelRecord) -> dict:
         "provider": model.provider,
         "source": model.source,
         "source_url": model.source_url,
-        "release_date": model.release_date,
+        "release_date": normalize_release_date(model.release_date),
         "last_seen_at": model.last_seen_at,
         "model_family": model.model_family,
         "model_type": model.model_type,

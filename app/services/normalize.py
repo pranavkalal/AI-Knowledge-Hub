@@ -22,7 +22,7 @@ def normalize_raw_item(item: RawModelItem) -> dict[str, Any]:
         "provider": provider,
         "source": item.source,
         "source_url": item.source_url,
-        "release_date": raw.get("release_date") or raw.get("created") or raw.get("created_at"),
+        "release_date": normalize_release_date(raw.get("release_date") or raw.get("created") or raw.get("created_at")),
         "last_seen_at": now,
         "model_family": raw.get("model_family") or infer_family(model_name),
         "model_type": raw.get("model_type") or infer_model_type(item),
@@ -150,6 +150,31 @@ def normalize_cost_per_million(value: Any) -> float | None:
     if 0 < price < 0.01:
         return price * 1_000_000
     return price
+
+
+def normalize_release_date(value: Any) -> str | None:
+    """Return a readable release date when providers use timestamps."""
+
+    if value in (None, "", "unknown"):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        numeric = float(text)
+    except ValueError:
+        # Keep ISO-style dates compact and readable in the dashboard.
+        if re.match(r"^\d{4}-\d{2}-\d{2}", text):
+            return text[:10]
+        return text
+
+    # OpenRouter and several API catalogs use Unix seconds; some sources use
+    # milliseconds. Only convert plausible modern timestamps.
+    if numeric >= 1_000_000_000_000:
+        numeric /= 1000
+    if numeric >= 1_000_000_000:
+        return datetime.fromtimestamp(numeric, timezone.utc).date().isoformat()
+    return text
 
 
 def is_router_model(model_name: str, raw: dict[str, Any] | None = None) -> bool:
